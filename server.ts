@@ -95,16 +95,19 @@ app.set("trust proxy", 1);
 
 // CORS Middleware to allow cross-origin credential-carrying requests
 app.use((req, res, next) => {
+  const frontendUrl = process.env.FRONTEND_URL || "https://appos-ten.vercel.app";
   const allowedOrigins = [
     "https://appos-ten.vercel.app",
+    "https://appos.onrender.com",
     "http://localhost:3000",
-    "http://localhost:5173"
+    "http://localhost:5173",
+    frontendUrl
   ];
   const origin = req.headers.origin;
   if (origin && allowedOrigins.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   } else {
-    res.setHeader("Access-Control-Allow-Origin", "https://appos-ten.vercel.app");
+    res.setHeader("Access-Control-Allow-Origin", frontendUrl);
   }
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, PUT, PATCH, POST, DELETE, OPTIONS");

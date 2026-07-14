@@ -24,10 +24,13 @@ export const auth = betterAuth({
   // Domain constraints and trusted origins
   trustedOrigins: [
     "https://appos-ten.vercel.app",
+    "https://appos.onrender.com",
     "http://localhost:3000",
     // Also support local development container address
     "http://127.0.0.1:3000",
-  ],
+    process.env.BETTER_AUTH_URL || "",
+    process.env.FRONTEND_URL || ""
+  ].filter(Boolean),
 
   // 1. Email & Password Provider configuration
   emailAndPassword: {

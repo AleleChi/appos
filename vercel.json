@@ -2,6 +2,22 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
+      "source": "/api/auth/google(.*)",
+      "destination": "https://appos.onrender.com/api/auth/google$1"
+    },
+    {
+      "source": "/api/auth/complete",
+      "destination": "https://appos.onrender.com/api/auth/complete"
+    },
+    {
+      "source": "/api/auth/handoff/exchange",
+      "destination": "https://appos.onrender.com/api/auth/handoff/exchange"
+    },
+    {
+      "source": "/api/auth/session/introspect",
+      "destination": "https://appos.onrender.com/api/auth/session/introspect"
+    },
+    {
       "source": "/api/(?!auth/)(.*)",
       "destination": "https://appos.onrender.com/api/$1"
     },

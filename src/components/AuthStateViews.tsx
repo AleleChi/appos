@@ -4,6 +4,7 @@ import { Loader2, ShieldCheck, ShieldAlert, ArrowRight, Lock, Mail, CheckCircle,
 import { authService } from "../lib/authService";
 import { AuthLayout, AuthLogo, FormField, PasswordField, PrimaryButton } from "./AuthComponents";
 import { cn } from "../lib/utils";
+import { AUTH_ENDPOINTS, API_URL } from "../config/api";
 
 /**
  * ============================================================================
@@ -375,7 +376,7 @@ export function AuthErrorView({
             type: "APPOS_OAUTH_ERROR",
             code: errorCode
           },
-          "https://appos-ten.vercel.app"
+          API_URL
         );
       } catch (err) {
         console.warn("Could not post error message to opener", err);
@@ -385,11 +386,16 @@ export function AuthErrorView({
 
   const handleRetryGoogle = () => {
     const isIframe = window.self !== window.top;
-    const isSandboxOrPreview = isIframe || window.location.hostname !== "appos-ten.vercel.app";
+    const productionHostnames = ["appos-ten.vercel.app", "appos.onrender.com"];
+    try {
+      productionHostnames.push(new URL(API_URL).hostname);
+    } catch (e) {}
+    const isProductionHost = productionHostnames.includes(window.location.hostname);
+    const isSandboxOrPreview = isIframe || !isProductionHost;
     if (isSandboxOrPreview) {
-      window.open("https://appos-ten.vercel.app/login?provider=google", "_blank");
+      window.open(`${API_URL}/login?provider=google`, "_blank");
     } else {
-      window.location.href = "/api/auth/google";
+      window.location.href = AUTH_ENDPOINTS.googleLogin;
     }
   };
 
