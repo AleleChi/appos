@@ -1,6 +1,8 @@
 {
-  "name": "AppOS",
+  "name": "Remix: AppOS",
   "description": "Convert websites into production-ready native iOS and Android applications with AI analysis, native generation, security validation, and automated publishing.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

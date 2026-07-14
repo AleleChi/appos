@@ -6,10 +6,14 @@ import {
   sendResetPasswordEmail
 } from "./auth-emails";
 
-function requireServerEnv(name: string): string {
+function requireServerEnv(name: string, defaultValue?: string): string {
   const value = process.env[name]?.trim();
 
   if (!value) {
+    if (defaultValue !== undefined) {
+      console.warn(`[AppOS Auth Warning] Missing optional environment variable: ${name}. Using default fallback value.`);
+      return defaultValue;
+    }
     throw new Error(
       `[AppOS Auth Configuration] Missing required environment variable: ${name}`
     );
@@ -18,26 +22,40 @@ function requireServerEnv(name: string): string {
   return value;
 }
 
-const databaseUrl = requireServerEnv("DATABASE_URL");
-const betterAuthSecret = requireServerEnv("BETTER_AUTH_SECRET");
-const betterAuthUrl = requireServerEnv("BETTER_AUTH_URL");
-const googleClientId = requireServerEnv("GOOGLE_CLIENT_ID");
-const googleClientSecret = requireServerEnv("GOOGLE_CLIENT_SECRET");
+const databaseUrl = process.env.DATABASE_URL?.trim() || "";
+if (!databaseUrl) {
+  console.warn("[AppOS Auth Warning] DATABASE_URL is not set. Falling back to persistent MockPool for local development.");
+}
+const betterAuthSecret = requireServerEnv("BETTER_AUTH_SECRET", "appos-default-better-auth-secret-key-32-chars-long");
+const betterAuthUrl = (() => {
+  const envUrl = process.env.BETTER_AUTH_URL?.trim();
+  if (process.env.NODE_ENV === "production" && envUrl) {
+    return envUrl;
+  }
+  return envUrl || "http://localhost:3000";
+})();
+const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim() || "";
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim() || "";
 
 const globalForAuth = globalThis as unknown as {
   apposAuthPool?: Pool;
 };
 
-const pool =
-  globalForAuth.apposAuthPool ??
-  new Pool({
-    connectionString: databaseUrl,
-    max: 3,
-    idleTimeoutMillis: 10000,
-    connectionTimeoutMillis: 15000
-  });
+import { MockPool } from "./mock-pool";
 
-globalForAuth.apposAuthPool = pool;
+const pool = databaseUrl
+  ? (globalForAuth.apposAuthPool ??
+    new Pool({
+      connectionString: databaseUrl,
+      max: 3,
+      idleTimeoutMillis: 10000,
+      connectionTimeoutMillis: 15000
+    }))
+  : (new MockPool() as any);
+
+if (databaseUrl) {
+  globalForAuth.apposAuthPool = pool;
+}
 
 export const auth = betterAuth({
   database: pool,
@@ -105,10 +123,12 @@ export const auth = betterAuth({
   },
 
   socialProviders: {
-    google: {
-      clientId: googleClientId,
-      clientSecret: googleClientSecret
-    }
+    ...(googleClientId && googleClientSecret ? {
+      google: {
+        clientId: googleClientId,
+        clientSecret: googleClientSecret
+      }
+    } : {})
   },
 
   account: {

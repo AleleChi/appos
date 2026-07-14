@@ -9,6 +9,8 @@ import { createServer as createViteServer } from "vite";
 import { db } from "./src/lib/db";
 import { v2 as cloudinary } from "cloudinary";
 import { queue } from "./src/lib/queue";
+import { auth } from "./api/_lib/auth";
+import { toNodeHandler } from "better-auth/node";
 
 // Configure Cloudinary SDK securely using environment variables
 cloudinary.config({
@@ -117,6 +119,30 @@ app.use((req, res, next) => {
     return res.status(200).end();
   }
   next();
+});
+
+// Better Auth route handler with custom production-grade logging (Phase 7)
+// Mounted BEFORE body-parser to prevent consuming the request stream
+app.all("/api/auth/*", async (req, res) => {
+  const route = `${req.method} ${req.originalUrl}`;
+  const userEmail = req.query?.email || "unknown";
+  
+  let dbConnected = "unknown";
+  try {
+    const health = await db.checkHealth();
+    dbConnected = health.status === "ok" ? "connected" : "failed";
+  } catch (err) {
+    dbConnected = "failed";
+  }
+
+  console.log(`[AUTH EVENT]
+Route: ${route}
+User: ${userEmail}
+Database: ${dbConnected}
+Result: Processing delegate to Better Auth`);
+
+  // Delegate the request directly to the Better Auth node handler
+  return toNodeHandler(auth.handler)(req, res);
 });
 
 // Body parsing and security cookies
@@ -242,6 +268,31 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", time: new Date().toISOString() });
 });
 
+// Diagnostic database health check endpoint
+app.get("/api/health/database", async (req, res) => {
+  try {
+    const health = await db.checkHealth();
+    if (health.status === "ok") {
+      res.json({
+        database: "connected"
+      });
+    } else {
+      res.status(503).json({
+        database: "failed",
+        error: "Database is unreachable or offline"
+      });
+    }
+  } catch (err: any) {
+    res.status(503).json({
+      database: "failed",
+      error: err.message || "An unexpected database error occurred"
+    });
+  }
+});
+
+// Better Auth handler delegated above body-parser to prevent stream lock
+
+
 /**
  * ============================================================================
  * HIGHLY SECURE VERSIONED API ROUTER (api/v1)
@@ -284,9 +335,33 @@ v1Router.get("/health/database", async (req, res) => {
   }
 });
 
-// Helper for session checks (session_id cookie is user_id in this flow)
-function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const userId = req.cookies.session_id;
+// Helper for session checks (session_id cookie is user_id in this flow, with modern Better Auth integration)
+async function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  try {
+    // 1. Try to validate session using Better Auth
+    const headers = new Headers();
+    for (const [key, val] of Object.entries(req.headers)) {
+      if (Array.isArray(val)) {
+        val.forEach(v => headers.append(key, v));
+      } else if (val !== undefined) {
+        headers.set(key, val);
+      }
+    }
+
+    const session = await auth.api.getSession({
+      headers
+    });
+    if (session && session.user) {
+      req.cookies = req.cookies || {};
+      req.cookies.session_id = session.user.id;
+      return next();
+    }
+  } catch (err) {
+    console.error("[server] Better Auth session validation error:", err);
+  }
+
+  // 2. Fall back to standard session_id cookie
+  const userId = req.cookies?.session_id;
   if (!userId) {
     res.status(401).json({ error: "Unauthorized access. Active session required." });
     return;

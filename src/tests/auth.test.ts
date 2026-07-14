@@ -7,8 +7,13 @@ import { Database } from "../lib/db";
  * Verifies all security claims, validation metrics, and account protection mandates.
  */
 
-// Initialize a separate, clean database context specifically for sandboxed testing
+// Save original database URL and temporarily remove it to force JSON fallback mode for sandboxed synchronous unit tests
+const originalDbUrl = process.env.DATABASE_URL;
+delete process.env.DATABASE_URL;
 const testDb = new Database();
+if (originalDbUrl) {
+  process.env.DATABASE_URL = originalDbUrl;
+}
 
 // Helper to simulate request payload processing
 interface SignupPayload {
@@ -261,12 +266,12 @@ async function runTests() {
   const attackEmail = "attacker@appos.com";
   for (let i = 0; i < 6; i++) {
     testDb.execute(
-      "INSERT INTO audit_logs (id, event_type, email, ip_address, details, created_at)",
+      "INSERT INTO audit_logs (id, event_type, email, ip_address, details, created_at) VALUES (?, ?, ?, ?, ?, ?)",
       [crypto.randomUUID(), "signup_attempt", attackEmail, "192.168.1.1", `Signup process initiated`, new Date().toISOString()]
     );
   }
   // Check rate limit check condition (which would match the server.ts emailSignupLimiter logic)
-  const attackLogs = testDb.query("SELECT * FROM audit_logs");
+  const attackLogs = await testDb.query("SELECT * FROM audit_logs");
   const recentAttempts = attackLogs.filter((log: any) => log.email === attackEmail && log.event_type === "signup_attempt" && log.created_at >= oneHourAgo);
   assert("Email Rate Limiter: Detects and flags rapid sign-up occurrences (>=5 attempts)", recentAttempts.length >= 5);
 

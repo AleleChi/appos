@@ -385,7 +385,7 @@ export function SocialAuthButton({
         </svg>
       )}
       {loading && <Loader2 className="h-4 w-4 animate-spin text-slate-500 shrink-0 ml-1" />}
-      <span>{loading ? (isGoogle ? "Opening Google..." : "Connecting...") : `Continue with ${isGoogle ? "Google" : "Apple"}`}</span>
+      <span>{loading ? (isGoogle ? "Connecting to Google..." : "Connecting...") : `Continue with ${isGoogle ? "Google" : "Apple"}`}</span>
     </button>
   );
 }
