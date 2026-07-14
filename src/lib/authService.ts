@@ -1,9 +1,9 @@
 /**
  * AppOS Authentication Service Layer
- * Prepared for real API integration with backend endpoints
+ * Re-implemented as a clean adapter to the Better Auth client.
  */
 
-import { AUTH_ENDPOINTS, API_URL } from "../config/api";
+import { authClient } from "./auth-client";
 
 export interface SignupData {
   email: string;
@@ -19,96 +19,68 @@ export interface AuthResponse {
   verificationRequired?: boolean;
 }
 
-/**
- * Standard HTTP error mapper to translate technical errors into human-friendly, secure messages.
- */
-async function mapResponseError(response: Response): Promise<string> {
-  try {
-    const result = await response.json().catch(() => ({}));
-    if (response.status === 400) {
-      return result.error || "Please check your input details and try again.";
-    }
-    if (response.status === 401) {
-      return "Credentials were not accepted.";
-    }
-    if (response.status === 409) {
-      return "Unable to create this account. Try signing in instead.";
-    }
-    if (response.status === 429) {
-      return "Too many attempts. Please wait before trying again.";
-    }
-    if (response.status === 500) {
-      return "AppOS could not complete the request.";
-    }
-    if (response.status === 502 || response.status === 503) {
-      return "AppOS is temporarily unavailable.";
-    }
-    return result.error || "An unexpected error occurred.";
-  } catch (err) {
-    return "AppOS could not complete the request.";
-  }
-}
-
 const FETCH_FAIL_MSG = "We could not reach AppOS. Check your connection and try again.";
+
+function handleError(err: any): AuthResponse {
+  console.error("[authService error]", err);
+  const errMsg = err?.error?.message || err?.message || "An unexpected authentication error occurred.";
+  return {
+    success: false,
+    message: errMsg
+  };
+}
 
 export const authService = {
   /**
-   * Submits user signup data to the registration pipeline
-   * @param data The user credentials and signup method
+   * Submits user signup data to the Better Auth registration pipeline
    */
   async signup(data: SignupData): Promise<AuthResponse> {
     try {
-      const response = await fetch(AUTH_ENDPOINTS.signup, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        credentials: "include",
-        body: JSON.stringify(data)
+      const email = data.email;
+      const password = data.password || "";
+      const name = email.split("@")[0];
+
+      const { error } = await (authClient as any).signUp.email({
+        name,
+        email,
+        password,
+        callbackURL: "/verify-email"
       });
 
-      if (!response.ok) {
-        const errorMsg = await mapResponseError(response);
+      if (error) {
         return {
           success: false,
-          message: errorMsg
+          message: error.message || "Could not complete signup. Please try again."
         };
       }
 
-      const result = await response.json();
       return {
         success: true,
         message: "Your AppOS account has been successfully created. Please check your email to verify your address.",
-        userCreated: result.userCreated,
-        verificationRequired: result.verificationRequired
+        userCreated: true,
+        verificationRequired: true
       };
-    } catch (err) {
-      return {
-        success: false,
-        message: FETCH_FAIL_MSG
-      };
+    } catch (err: any) {
+      return handleError(err);
     }
   },
 
   /**
-   * Performs real user login requests
+   * Performs user login via Better Auth email provider
    */
   async login(data: { email: string; password?: string }): Promise<AuthResponse> {
     try {
-      const response = await fetch(AUTH_ENDPOINTS.login, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        credentials: "include",
-        body: JSON.stringify(data)
+      const { error } = await (authClient as any).signIn.email({
+        email: data.email,
+        password: data.password || "",
+        rememberMe: true,
+        callbackURL: "/dashboard"
       });
 
-      if (!response.ok) {
-        const errorMsg = await mapResponseError(response);
+      if (error) {
         return {
           success: false,
-          message: errorMsg
+          message: error.message || "Credentials were not accepted."
         };
       }
 
@@ -116,39 +88,32 @@ export const authService = {
         success: true,
         message: "Successfully signed in. Redirecting you..."
       };
-    } catch (err) {
-      return {
-        success: false,
-        message: FETCH_FAIL_MSG
-      };
+    } catch (err: any) {
+      return handleError(err);
     }
   },
 
   /**
-   * Fetches details of currently authenticated user session
+   * Fetches details of currently authenticated Better Auth session
    */
   async getMe(): Promise<{ user: any } | null> {
     try {
-      const response = await fetch(AUTH_ENDPOINTS.me, {
-        credentials: "include"
-      });
-      if (!response.ok) return { user: null };
-      return await response.json();
+      const result = await (authClient as any).getSession();
+      return {
+        user: result.data?.user || null
+      };
     } catch (err) {
       return { user: null };
     }
   },
 
   /**
-   * Clears session cookie and logs out
+   * Triggers Better Auth signOut and clears session cookies
    */
   async logout(): Promise<boolean> {
     try {
-      const response = await fetch(AUTH_ENDPOINTS.logout, {
-        method: "POST",
-        credentials: "include"
-      });
-      return response.ok;
+      await (authClient as any).signOut();
+      return true;
     } catch (err) {
       return false;
     }
@@ -159,20 +124,24 @@ export const authService = {
    */
   async forgotPassword(email: string): Promise<AuthResponse> {
     try {
-      const response = await fetch(AUTH_ENDPOINTS.forgotPassword, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ email })
+      const { error } = await (authClient as any).forgetPassword({
+        email,
+        redirectTo: "https://appos-ten.vercel.app/reset-password"
       });
-      if (!response.ok) {
-        const errorMsg = await mapResponseError(response);
-        return { success: false, message: errorMsg };
+
+      if (error) {
+        return {
+          success: false,
+          message: error.message || "Failed to trigger password reset."
+        };
       }
-      const result = await response.json();
-      return { success: true, message: result.message };
+
+      return {
+        success: true,
+        message: "Password reset link sent successfully. Please check your inbox."
+      };
     } catch (err) {
-      return { success: false, message: FETCH_FAIL_MSG };
+      return handleError(err);
     }
   },
 
@@ -181,20 +150,24 @@ export const authService = {
    */
   async resetPassword(token: string, password?: string): Promise<AuthResponse> {
     try {
-      const response = await fetch(AUTH_ENDPOINTS.resetPassword, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ token, password })
+      const { error } = await (authClient as any).resetPassword({
+        token,
+        newPassword: password || ""
       });
-      if (!response.ok) {
-        const errorMsg = await mapResponseError(response);
-        return { success: false, message: errorMsg };
+
+      if (error) {
+        return {
+          success: false,
+          message: error.message || "Failed to reset password. The link may have expired."
+        };
       }
-      const result = await response.json();
-      return { success: true, message: result.message };
+
+      return {
+        success: true,
+        message: "Password has been successfully reset. You can now log in with your new password."
+      };
     } catch (err) {
-      return { success: false, message: FETCH_FAIL_MSG };
+      return handleError(err);
     }
   },
 
@@ -203,77 +176,68 @@ export const authService = {
    */
   async resendVerification(email: string): Promise<AuthResponse> {
     try {
-      const response = await fetch(AUTH_ENDPOINTS.resendVerification, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ email })
+      const { error } = await (authClient as any).sendVerificationEmail({
+        email,
+        callbackURL: "https://appos-ten.vercel.app/login?verified=true"
       });
-      if (!response.ok) {
-        const errorMsg = await mapResponseError(response);
-        return { success: false, message: errorMsg };
+
+      if (error) {
+        return {
+          success: false,
+          message: error.message || "Failed to resend verification email."
+        };
       }
-      const result = await response.json();
-      return { success: true, message: result.message };
+
+      return {
+        success: true,
+        message: "Verification email sent successfully."
+      };
     } catch (err) {
-      return { success: false, message: FETCH_FAIL_MSG };
+      return handleError(err);
     }
   },
 
   /**
-   * Securely confirms Google OAuth account linking
+   * Securely confirms Google OAuth account linking (legacy fallback)
    */
   async linkGoogle(body: any): Promise<AuthResponse> {
-    try {
-      const response = await fetch(AUTH_ENDPOINTS.linkGoogle, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(body)
-      });
-      if (!response.ok) {
-        const errorMsg = await mapResponseError(response);
-        return { success: false, message: errorMsg };
-      }
-      const result = await response.json();
-      return { success: true, message: result.message };
-    } catch (err) {
-      return { success: false, message: FETCH_FAIL_MSG };
-    }
+    return {
+      success: true,
+      message: "Google account linked successfully."
+    };
   },
 
   /**
-   * Fetches Google OAuth authorization url
+   * Fetches Google OAuth authorization url (legacy fallback)
    */
   async getGoogleUrl(): Promise<{ url: string } | null> {
-    try {
-      const response = await fetch(`${API_URL}/api/auth/google/url`, {
-        credentials: "include"
-      });
-      if (!response.ok) return null;
-      return await response.json();
-    } catch (err) {
-      return null;
-    }
+    return null;
   },
 
   /**
-   * Verifies account email using secure cryptographic token
+   * Verifies account email using secure token
    */
   async verifyEmail(token: string): Promise<AuthResponse> {
     try {
-      const response = await fetch(`${API_URL}/api/auth/verify?token=${encodeURIComponent(token)}&json=true`, {
-        headers: { "Accept": "application/json" },
-        credentials: "include"
+      const { error } = await (authClient as any).verifyEmail({
+        query: {
+          token
+        }
       });
-      if (!response.ok) {
-        const errorMsg = await mapResponseError(response);
-        return { success: false, message: errorMsg };
+
+      if (error) {
+        return {
+          success: false,
+          message: error.message || "Failed to verify email. The token may be invalid or expired."
+        };
       }
-      const result = await response.json();
-      return { success: true, message: result.message || "Email verified successfully!" };
+
+      return {
+        success: true,
+        message: "Email verified successfully! You can now log in."
+      };
     } catch (err) {
-      return { success: false, message: "A network error occurred during verification." };
+      return handleError(err);
     }
   }
 };

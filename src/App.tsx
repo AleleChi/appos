@@ -17,6 +17,7 @@ import SecurityPage from "./components/SecurityPage";
 import SignupPage from "./components/SignupPage";
 import DashboardPage from "./components/DashboardPage";
 import { authService } from "./lib/authService";
+import { authClient } from "./lib/auth-client";
 import { 
   AuthCallbackView, 
   AuthErrorView, 
@@ -44,8 +45,10 @@ export default function App() {
     | "server-error"
   >("home");
   const [analyzingUrl, setAnalyzingUrl] = useState<string | null>(null);
-  const [user, setUser] = useState<any>(null);
-  const [isSessionLoading, setIsSessionLoading] = useState(true);
+
+  // Use the reactive Better Auth session hook
+  const { data: sessionData, isPending: isSessionLoading } = (authClient as any).useSession();
+  const user = sessionData?.user || null;
 
   // Smooth scroll helper
   const scrollToSection = (id: string) => {
@@ -174,28 +177,16 @@ export default function App() {
     }
   }, [user, currentPage]);
 
-  // Perform secure session initialization check on mount
+    // Sync initial routing with current session if landed on login/signup/home
   useEffect(() => {
-    const initializeSession = async () => {
-      try {
-         const data = await authService.getMe();
-         if (data && data.user) {
-           setUser(data.user);
-           const path = window.location.pathname;
-           if (path === "/login" || path === "/signup" || path === "/") {
-             setCurrentPage("dashboard");
-           }
-         }
-      } catch (err) {
-        console.error("Session check failure:", err);
-      } finally {
-        setIsSessionLoading(false);
+    if (!isSessionLoading && user) {
+      const path = window.location.pathname;
+      if (path === "/login" || path === "/signup" || path === "/") {
+        setCurrentPage("dashboard");
       }
-    };
-    initializeSession();
-  }, []);
-
-  if (isSessionLoading) {
+    }
+  }, [isSessionLoading, user]);
+if (isSessionLoading) {
     return (
       <div className="min-h-screen bg-[#F7F9FC] flex flex-col items-center justify-center font-sans antialiased">
         <div className="flex flex-col items-center gap-4">
@@ -240,16 +231,15 @@ export default function App() {
         {currentPage === "dashboard" ? (
           <DashboardPage
             user={user}
-            onLogout={() => {
-              setUser(null);
+            onLogout={async () => {
+              await authService.logout();
               setCurrentPage("home");
               window.scrollTo({ top: 0, behavior: "smooth" });
             }}
           />
         ) : currentPage === "auth-callback" ? (
           <AuthCallbackView
-            onSuccess={(authenticatedUser) => {
-              setUser(authenticatedUser);
+            onSuccess={() => {
               setCurrentPage("dashboard");
             }}
           />
@@ -259,8 +249,7 @@ export default function App() {
           />
         ) : currentPage === "auth-link-account" ? (
           <AuthLinkAccountView
-            onSuccess={(authenticatedUser) => {
-              setUser(authenticatedUser);
+            onSuccess={() => {
               setCurrentPage("dashboard");
             }}
             onNavigate={(page) => setCurrentPage(page)}
@@ -284,8 +273,7 @@ export default function App() {
               setCurrentPage("home");
               window.scrollTo({ top: 0, behavior: "smooth" });
             }}
-            onSignupSuccess={(authenticatedUser) => {
-              setUser(authenticatedUser);
+            onSignupSuccess={() => {
               setTimeout(() => {
                 setCurrentPage("dashboard");
                 window.scrollTo({ top: 0, behavior: "smooth" });

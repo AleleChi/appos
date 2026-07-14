@@ -1,76 +1,129 @@
 import { betterAuth } from "better-auth";
-import { sendVerificationEmail, sendResetPasswordEmail } from "./auth-emails";
+import { Pool } from "pg";
+import bcryptjs from "bcryptjs";
+import {
+  sendVerificationEmail,
+  sendResetPasswordEmail
+} from "./auth-emails";
 
-// Cryptographic secret generation fallback for development safety
-const getAuthSecret = () => {
-  const secret = process.env.BETTER_AUTH_SECRET;
-  if (!secret) {
-    console.warn("[BetterAuth] BETTER_AUTH_SECRET is not configured in environment! Falling back to temporary local secret.");
-    return "development-fallback-secret-31b7976b-b404-4b38-a1a6";
+function requireServerEnv(name: string): string {
+  const value = process.env[name]?.trim();
+
+  if (!value) {
+    throw new Error(
+      `[AppOS Auth Configuration] Missing required environment variable: ${name}`
+    );
   }
-  return secret;
+
+  return value;
+}
+
+const databaseUrl = requireServerEnv("DATABASE_URL");
+const betterAuthSecret = requireServerEnv("BETTER_AUTH_SECRET");
+const betterAuthUrl = requireServerEnv("BETTER_AUTH_URL");
+const googleClientId = requireServerEnv("GOOGLE_CLIENT_ID");
+const googleClientSecret = requireServerEnv("GOOGLE_CLIENT_SECRET");
+
+const globalForAuth = globalThis as unknown as {
+  apposAuthPool?: Pool;
 };
 
+const pool =
+  globalForAuth.apposAuthPool ??
+  new Pool({
+    connectionString: databaseUrl,
+    max: 3,
+    idleTimeoutMillis: 10000,
+    connectionTimeoutMillis: 15000
+  });
+
+globalForAuth.apposAuthPool = pool;
+
 export const auth = betterAuth({
-  database: {
-    provider: "postgres",
-    connectionString: process.env.DATABASE_URL || "",
-  },
-  
-  // Base configuration
-  baseURL: process.env.BETTER_AUTH_URL || "https://appos-ten.vercel.app",
-  secret: getAuthSecret(),
-  
-  // Domain constraints and trusted origins
+  database: pool,
+
+  baseURL: betterAuthUrl,
+
+  secret: betterAuthSecret,
+
   trustedOrigins: [
     "https://appos-ten.vercel.app",
-    "https://appos.onrender.com",
     "http://localhost:3000",
-    // Also support local development container address
-    "http://127.0.0.1:3000",
-    process.env.BETTER_AUTH_URL || "",
-    process.env.FRONTEND_URL || ""
-  ].filter(Boolean),
+    "http://localhost:5173"
+  ],
 
-  // 1. Email & Password Provider configuration
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: true,
-    
-    // Core email flow handlers using AppOS Resend implementation
-    sendVerificationEmail: async ({ user, url, token }) => {
-      console.log(`[BetterAuth] Triggering verification email for ${user.email}`);
-      await sendVerificationEmail({ email: user.email, url });
+    minPasswordLength: 12,
+    maxPasswordLength: 128,
+    revokeSessionsOnPasswordReset: true,
+
+    password: {
+      hash: async (password: string) => {
+        return bcryptjs.hash(password, 12);
+      },
+
+      verify: async ({
+        password,
+        hash
+      }: {
+        password: string;
+        hash: string;
+      }) => {
+        return bcryptjs.compare(password, hash);
+      }
     },
-    
-    sendResetPassword: async ({ user, url, token }) => {
-      console.log(`[BetterAuth] Triggering password-reset email for ${user.email}`);
-      await sendResetPasswordEmail({ email: user.email, url });
-    },
+
+    sendResetPassword: async ({ user, url }) => {
+      const result = await sendResetPasswordEmail({
+        email: user.email,
+        url
+      });
+
+      if (!result.success) {
+        console.error(
+          "[AppOS Auth] Password-reset email delivery failed."
+        );
+      }
+    }
   },
 
-  // 2. Google OAuth Provider configuration
+  emailVerification: {
+    sendVerificationEmail: async ({ user, url }) => {
+      const result = await sendVerificationEmail({
+        email: user.email,
+        url
+      });
+
+      if (!result.success) {
+        console.error(
+          "[AppOS Auth] Verification email delivery failed."
+        );
+      }
+    }
+  },
+
   socialProviders: {
     google: {
-      clientId: process.env.GOOGLE_CLIENT_ID || "mock-client-id",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "mock-client-secret",
-    },
+      clientId: googleClientId,
+      clientSecret: googleClientSecret
+    }
   },
 
-  // 3. Advanced session settings
+  account: {
+    accountLinking: {
+      enabled: true,
+      disableImplicitLinking: true
+    }
+  },
+
   session: {
+    expiresIn: 7 * 24 * 60 * 60,
+    updateAge: 24 * 60 * 60,
     cookieCache: {
       enabled: true,
-      maxAge: 5 * 60, // 5 minutes cache
-    },
-    expiresIn: 7 * 24 * 60 * 60, // 7 days session
-    updateAge: 24 * 60 * 60, // Update session once a day
-  },
-
-  // 4. Account Linking Policy & Rate Limiting
-  accountLinking: {
-    enabled: true,
-    // When a user logs in with Google using an existing verified email, link accounts safely
-    autoLink: true,
-  },
+      maxAge: 5 * 60
+    }
+  }
 });

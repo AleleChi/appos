@@ -10,7 +10,7 @@ import {
   PrimaryButton
 } from "./AuthComponents";
 import { authService } from "../lib/authService";
-import { AUTH_ENDPOINTS, API_URL } from "../config/api";
+import { authClient } from "../lib/auth-client";
 
 interface SignupPageProps {
   onBackToHome?: () => void;
@@ -67,13 +67,8 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
   // Detect iframe or sandbox preview
   useEffect(() => {
     const isIframe = window.self !== window.top;
-    const productionHostnames = ["appos-ten.vercel.app", "appos.onrender.com"];
-    try {
-      productionHostnames.push(new URL(API_URL).hostname);
-    } catch (e) {}
-    const isProductionHost = productionHostnames.includes(window.location.hostname);
-    const isNotProduction = !isProductionHost;
-    if (isIframe || isNotProduction) {
+    const isProductionHost = window.location.hostname === "appos-ten.vercel.app";
+    if (isIframe || !isProductionHost) {
       setIsPreviewMode(true);
     }
   }, []);
@@ -83,14 +78,16 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
     const params = new URLSearchParams(window.location.search);
     if (params.get("provider") === "google") {
       const isIframe = window.self !== window.top;
-      const productionHostnames = ["appos-ten.vercel.app", "appos.onrender.com"];
-      try {
-        productionHostnames.push(new URL(API_URL).hostname);
-      } catch (e) {}
-      const isProductionHost = productionHostnames.includes(window.location.hostname);
+      const isProductionHost = window.location.hostname === "appos-ten.vercel.app";
       const isSandboxOrPreview = isIframe || !isProductionHost;
       if (!isSandboxOrPreview) {
-        window.location.href = AUTH_ENDPOINTS.googleLogin;
+        (authClient as any).signIn.social({
+          provider: "google",
+          callbackURL: "/dashboard",
+          errorCallbackURL: "/auth/error?code=provider_unavailable"
+        }).catch((err: any) => {
+          console.error("Google social sign-in failed", err);
+        });
       }
     }
   }, []);
@@ -121,40 +118,7 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
     }
   }, []);
 
-  // Listen to Google OAuth popup events
-  useEffect(() => {
-    const handleOAuthMessage = async (event: MessageEvent) => {
-      const origin = event.origin;
-      if (!origin.endsWith(".run.app") && !origin.includes("localhost") && !origin.includes("127.0.0.1") && !origin.includes("::1")) {
-        return;
-      }
-      
-      if (event.data?.type === "OAUTH_AUTH_SUCCESS") {
-        setIsSuccess(true);
-        setSuccessMsg("Signed in via Google! Authenticating session...");
-        
-        // Fetch session
-        const details = await authService.getMe();
-        if (onSignupSuccess && details && details.user) {
-          setTimeout(() => {
-            onSignupSuccess(details.user);
-          }, 1500);
-        }
-      } else if (event.data?.type === "OAUTH_CONFLICT") {
-        setConflictData({
-          email: event.data.email,
-          provider: event.data.provider,
-          provider_id: event.data.provider_id
-        });
-        setMode("link-conflict");
-        setPassword("");
-        setErrors({});
-      }
-    };
-    
-    window.addEventListener("message", handleOAuthMessage);
-    return () => window.removeEventListener("message", handleOAuthMessage);
-  }, [onSignupSuccess]);
+
 
   // Input changes
   const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -319,19 +283,17 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
   };
 
   // Google OAuth Trigger
-  const handleGoogleOAuth = () => {
+  const handleGoogleOAuth = async () => {
+    if (googleState === "launching" || googleState === "redirecting") return;
+
     setErrors({});
     const isIframe = window.self !== window.top;
-    const productionHostnames = ["appos-ten.vercel.app", "appos.onrender.com"];
-    try {
-      productionHostnames.push(new URL(API_URL).hostname);
-    } catch (e) {}
-    const isProductionHost = productionHostnames.includes(window.location.hostname);
+    const isProductionHost = window.location.hostname === "appos-ten.vercel.app";
     const isSandboxOrPreview = isIframe || !isProductionHost;
 
     if (isSandboxOrPreview) {
       setGoogleState("launching");
-      const targetUrl = `${API_URL}/login?provider=google`;
+      const targetUrl = "https://appos-ten.vercel.app/login?provider=google";
       const newWin = window.open(targetUrl, "_blank");
       if (!newWin || newWin.closed || typeof newWin.closed === "undefined") {
         setGoogleState("popup_blocked");
@@ -342,11 +304,17 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
     }
 
     setGoogleState("launching");
-    
-    // Prevent duplicate submission and let the loading state paint first
-    requestAnimationFrame(() => {
-      window.location.assign(AUTH_ENDPOINTS.googleLogin);
-    });
+    try {
+      await (authClient as any).signIn.social({
+        provider: "google",
+        callbackURL: "/dashboard",
+        errorCallbackURL: "/auth/error?code=provider_unavailable"
+      });
+    } catch (err: any) {
+      console.error(err);
+      setErrors({ general: "Unable to initiate Google sign in." });
+      setGoogleState("failed");
+    }
   };
 
   const handleResendVerification = async () => {
@@ -590,7 +558,7 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
                       </p>
                     )}
                     <a
-                      href={`${API_URL}/login?provider=google`}
+                      href="https://appos-ten.vercel.app/login?provider=google"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-block mt-1 font-bold text-indigo-600 hover:text-indigo-500 underline"

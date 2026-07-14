@@ -4,7 +4,7 @@ import { Loader2, ShieldCheck, ShieldAlert, ArrowRight, Lock, Mail, CheckCircle,
 import { authService } from "../lib/authService";
 import { AuthLayout, AuthLogo, FormField, PasswordField, PrimaryButton } from "./AuthComponents";
 import { cn } from "../lib/utils";
-import { AUTH_ENDPOINTS, API_URL } from "../config/api";
+import { authClient } from "../lib/auth-client";
 
 /**
  * ============================================================================
@@ -185,7 +185,7 @@ export function AuthSystemStatusIndicator() {
 export function AuthCallbackView({
   onSuccess
 }: {
-  onSuccess: (user: any) => void;
+  onSuccess: () => void;
 }) {
   const [state, setState] = useState<
     "idle" | "checking_session" | "authenticated" | "unauthenticated" | "network_error" | "timed_out" | "failed"
@@ -223,7 +223,7 @@ export function AuthCallbackView({
           setState("authenticated");
           // Smooth transition before redirect
           setTimeout(() => {
-            onSuccess(data.user);
+            onSuccess();
           }, 800);
         } else {
           // Do not retry a 401 response (null user means unauthenticated)
@@ -278,12 +278,9 @@ export function AuthCallbackView({
           <div className="flex flex-col items-center justify-center py-4">
             <div className="w-9 h-9 border-[3px] border-slate-200 border-t-indigo-600 rounded-full animate-spin mb-4" />
             <div className="space-y-2 text-center">
-              <span className="font-mono text-[10px] text-indigo-600 font-bold tracking-widest uppercase">
-                SECURE SIGN-IN
-              </span>
-              <AuthStateTitle>Completing your sign-in</AuthStateTitle>
+              <AuthStateTitle>Verifying Your Session...</AuthStateTitle>
               <AuthStateDescription>
-                We are confirming your AppOS account. This should only take a moment.
+                Connecting to AppOS key vault to validate credentials...
               </AuthStateDescription>
             </div>
           </div>
@@ -292,40 +289,25 @@ export function AuthCallbackView({
         {isSuccess && (
           <div className="flex flex-col items-center justify-center py-4">
             <AuthStateIcon type="success" icon={ShieldCheck} />
-            <div className="space-y-2 text-center mt-3">
-              <AuthStateTitle>Welcome to AppOS</AuthStateTitle>
+            <div className="space-y-2 text-center mt-6">
+              <AuthStateTitle>Security Verified</AuthStateTitle>
               <AuthStateDescription>
-                Your session has been successfully established. Launching your workspace...
+                Handoff completed successfully. Redirecting to workspace...
               </AuthStateDescription>
             </div>
           </div>
         )}
 
         {isError && (
-          <div className="flex flex-col items-center justify-center py-4">
+          <div className="flex flex-col items-center justify-center py-4 space-y-4">
             <AuthStateIcon type="error" icon={ShieldAlert} />
-            <div className="space-y-2 text-center mt-3">
-              <AuthStateTitle>We could not confirm your sign-in</AuthStateTitle>
-              <AuthStateDescription>
-                Your secure sign-in session was not available. Please start again.
-              </AuthStateDescription>
+            <div className="space-y-2 text-center">
+              <AuthStateTitle>Handoff Verification Failed</AuthStateTitle>
+              <AuthStateDescription>{errorDetails}</AuthStateDescription>
             </div>
-            <AuthStateActions className="mt-4">
-              <div className="flex flex-col gap-2 w-full max-w-xs mx-auto">
-                <a
-                  href="/api/auth/google"
-                  className="w-full inline-flex items-center justify-center gap-2 text-sm font-semibold text-white py-2.5 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-500 transition-colors shadow-sm"
-                >
-                  Try Google Again
-                </a>
-                <a
-                  href="/login"
-                  className="w-full inline-flex items-center justify-center gap-2 text-sm font-semibold text-slate-700 hover:text-slate-900 py-2.5 px-4 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200/50 transition-colors"
-                >
-                  Back to Sign In
-                </a>
-              </div>
-            </AuthStateActions>
+            <PrimaryButton onClick={() => window.location.assign("/login")}>
+              Return to Login
+            </PrimaryButton>
           </div>
         )}
       </AuthStateCard>
@@ -335,8 +317,7 @@ export function AuthCallbackView({
 
 /**
  * 2. AuthErrorView
- * Translates the STRICT Allowlist of Safe Error Codes into high-fidelity screens.
- * Filters out arbitrary values to prevent reflection attacks or visual manipulation.
+ * Renders during /auth/error?code=...
  */
 export function AuthErrorView({
   onNavigate
@@ -344,58 +325,19 @@ export function AuthErrorView({
   onNavigate: (page: any) => void;
 }) {
   const params = new URLSearchParams(window.location.search);
-  const rawCode = params.get("code") || "unknown_error";
-
-  // Strict allowlist of safe authentication error codes
-  const errorAllowlist = new Set([
-    "oauth_cancelled",
-    "invalid_state",
-    "state_expired",
-    "token_exchange_failed",
-    "profile_invalid",
-    "email_not_verified",
-    "account_conflict",
-    "session_failed",
-    "provider_unavailable",
-    "rate_limited",
-    "database_unavailable",
-    "service_configuration_error",
-    "network_error",
-    "access_denied",
-    "unknown_error"
-  ]);
-
-  // Enforce resolution of arbitrary codes to unknown_error
-  const errorCode = errorAllowlist.has(rawCode) ? rawCode : "unknown_error";
-
-  useEffect(() => {
-    if (window.opener) {
-      try {
-        window.opener.postMessage(
-          {
-            type: "APPOS_OAUTH_ERROR",
-            code: errorCode
-          },
-          API_URL
-        );
-      } catch (err) {
-        console.warn("Could not post error message to opener", err);
-      }
-    }
-  }, [errorCode]);
+  const errorCode = params.get("code") || "UNKNOWN_ERROR";
 
   const handleRetryGoogle = () => {
     const isIframe = window.self !== window.top;
-    const productionHostnames = ["appos-ten.vercel.app", "appos.onrender.com"];
-    try {
-      productionHostnames.push(new URL(API_URL).hostname);
-    } catch (e) {}
-    const isProductionHost = productionHostnames.includes(window.location.hostname);
+    const isProductionHost = window.location.hostname === "appos-ten.vercel.app";
     const isSandboxOrPreview = isIframe || !isProductionHost;
     if (isSandboxOrPreview) {
-      window.open(`${API_URL}/login?provider=google`, "_blank");
+      window.open("https://appos-ten.vercel.app/login?provider=google", "_blank");
     } else {
-      window.location.href = AUTH_ENDPOINTS.googleLogin;
+      (authClient as any).signIn.social({
+        provider: "google",
+        callbackURL: "/dashboard"
+      }).catch(console.error);
     }
   };
 
