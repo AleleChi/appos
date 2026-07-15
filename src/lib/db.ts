@@ -357,10 +357,22 @@ export class Database {
             access_token_expires_at VARCHAR(255),
             refresh_token_expires_at VARCHAR(255),
             scope TEXT,
-            password_hash TEXT,
+            password TEXT,
             created_at VARCHAR(255) NOT NULL,
             updated_at VARCHAR(255) NOT NULL
           );
+        `);
+        // Migrate column name if password_hash exists
+        await client.query(`
+          DO $$
+          BEGIN
+            IF EXISTS (
+              SELECT 1 FROM information_schema.columns 
+              WHERE table_name='accounts' AND column_name='password_hash'
+            ) THEN
+              ALTER TABLE accounts RENAME COLUMN password_hash TO password;
+            END IF;
+          END $$;
         `);
         await client.query(`
           CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_provider_account ON accounts (provider_id, account_id);

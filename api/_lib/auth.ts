@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { oAuthProxy } from "better-auth/plugins";
 import { Pool } from "pg";
 import { Kysely, PostgresDialect } from "kysely";
 import bcryptjs from "bcryptjs";
@@ -156,8 +157,22 @@ export const auth = betterAuth({
 
   trustedOrigins: getDynamicTrustedOrigins,
 
+  plugins: [
+    oAuthProxy({
+      productionURL: "https://appos-ten.vercel.app",
+    }) as any
+  ],
+
   advanced: {
     disableCSRFCheck: true,
+    cookies: {
+      state: {
+        attributes: {
+          sameSite: "none",
+          secure: true
+        }
+      }
+    } as any,
     defaultCookieAttributes: {
       sameSite: "none",
       secure: true
@@ -288,11 +303,22 @@ export const auth = betterAuth({
       refreshToken: "refresh_token",
       idToken: "id_token",
       accessTokenExpiresAt: "access_token_expires_at",
-      refreshTokenExpiresAt: "refresh_token_expires_at"
+      refreshTokenExpiresAt: "refresh_token_expires_at",
+      password: "password"
     },
     accountLinking: {
       enabled: true,
-      disableImplicitLinking: true
+      trustedProviders: ["google"],
+      disableImplicitLinking: false
+    } as any
+  },
+
+  verification: {
+    modelName: "verification",
+    fields: {
+      expiresAt: "expires_at",
+      createdAt: "created_at",
+      updatedAt: "updated_at"
     }
   },
 
