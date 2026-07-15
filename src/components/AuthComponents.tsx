@@ -338,7 +338,7 @@ export function SocialAuthButton({
   disabled
 }: {
   provider: "google" | "apple";
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent) => void;
   className?: string;
   loading?: boolean;
   disabled?: boolean;

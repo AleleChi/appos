@@ -293,33 +293,40 @@ export const auth = betterAuth({
     }
   },
 
-  account: {
-    modelName: "accounts",
-    fields: {
-      userId: "user_id",
-      providerId: "provider_id",
-      accountId: "account_id",
-      accessToken: "access_token",
-      refreshToken: "refresh_token",
-      idToken: "id_token",
-      accessTokenExpiresAt: "access_token_expires_at",
-      refreshTokenExpiresAt: "refresh_token_expires_at",
-      password: "password"
+  model: {
+    account: {
+      modelName: "accounts",
+      fields: {
+        userId: "user_id",
+        providerId: "provider_id",
+        accountId: "account_id",
+        accessToken: "access_token",
+        refreshToken: "refresh_token",
+        idToken: "id_token",
+        accessTokenExpiresAt: "access_token_expires_at",
+        refreshTokenExpiresAt: "refresh_token_expires_at",
+        scope: "scope",
+        password: "password",
+        createdAt: "created_at",
+        updatedAt: "updated_at"
+      }
     },
+    verification: {
+      modelName: "verification",
+      fields: {
+        expiresAt: "expires_at",
+        createdAt: "created_at",
+        updatedAt: "updated_at"
+      }
+    }
+  },
+
+  account: {
     accountLinking: {
       enabled: true,
       trustedProviders: ["google"],
       disableImplicitLinking: false
     } as any
-  },
-
-  verification: {
-    modelName: "verification",
-    fields: {
-      expiresAt: "expires_at",
-      createdAt: "created_at",
-      updatedAt: "updated_at"
-    }
   },
 
   session: {

@@ -423,7 +423,10 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
   };
 
   // Google OAuth Trigger
-  const handleGoogleOAuth = async () => {
+  const handleGoogleOAuth = async (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+    }
     if (googleState === "launching" || googleState === "redirecting") return;
 
     setErrors({});
