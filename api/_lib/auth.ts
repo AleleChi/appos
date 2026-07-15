@@ -271,7 +271,10 @@ export const auth = betterAuth({
           throw new Error("[AppOS Auth Configuration] CRITICAL: Missing required environment variable GOOGLE_CLIENT_SECRET for Google OAuth initialization.");
         }
         return secret;
-      })()
+      })(),
+      redirectURI: process.env.NODE_ENV === "production"
+        ? "https://appos.onrender.com/api/auth/callback/google"
+        : undefined
     }
   },
 
