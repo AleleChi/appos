@@ -140,9 +140,10 @@ ERROR MESSAGE: ${err.message || String(err)}`);
    */
   async forgotPassword(email: string): Promise<AuthResponse> {
     try {
+      const originUrl = typeof window !== "undefined" ? window.location.origin : "https://appos-ten.vercel.app";
       const { error } = await (authClient as any).forgetPassword({
         email,
-        redirectTo: "https://appos-ten.vercel.app/reset-password"
+        redirectTo: `${originUrl}/reset-password`
       });
 
       if (error) {
@@ -192,9 +193,10 @@ ERROR MESSAGE: ${err.message || String(err)}`);
    */
   async resendVerification(email: string): Promise<AuthResponse> {
     try {
+      const originUrl = typeof window !== "undefined" ? window.location.origin : "https://appos-ten.vercel.app";
       const { error } = await (authClient as any).sendVerificationEmail({
         email,
-        callbackURL: "https://appos-ten.vercel.app/login?verified=true"
+        callbackURL: `${originUrl}/login?verified=true`
       });
 
       if (error) {

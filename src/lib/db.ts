@@ -147,6 +147,7 @@ interface DatabaseSchema {
   user: User[];
   session: Session[];
   account: Account[];
+  accounts: Account[];
   verification: Verification[];
   workspaces: Workspace[];
   workspace_members: WorkspaceMember[];
@@ -164,6 +165,7 @@ export class Database {
     user: [],
     session: [],
     account: [],
+    accounts: [],
     verification: [],
     workspaces: [],
     workspace_members: [],
@@ -176,8 +178,10 @@ export class Database {
 
   private pgPool: pg.Pool | null = null;
   private isPostgresActive = false;
+  private initializationPromise: Promise<void>;
 
   constructor() {
+    this.initializationPromise = Promise.resolve();
     const dbUrl = process.env.DATABASE_URL;
     const isProduction = process.env.NODE_ENV === "production";
 
@@ -225,17 +229,22 @@ export class Database {
           idleTimeoutMillis: 30000,
           connectionTimeoutMillis: 30000,
         });
+        
+        // Register an error event listener to catch background idle client exceptions safely
+        this.pgPool.on("error", (err) => {
+          console.error("Database: Unexpected background idle client error on PostgreSQL pool:", err);
+        });
+
         this.isPostgresActive = true;
         console.log("DATABASE_POOL_INITIALIZED=true");
         
-        // Non-blocking asynchronous background execution for database bootstrapping
-        Promise.resolve()
-          .then(async () => {
-            await this.bootstrapPostgres();
-          })
-          .catch((err) => {
-            console.error("Database background bootstrapping encountered an error:", err);
-          });
+        // Expose the asynchronous bootstrapping promise as an internal instance property on the Database class
+        this.initializationPromise = this.bootstrapPostgres().catch((err) => {
+          console.error("Database initialization failed during bootstrapPostgres:", err);
+          console.log("Database: Falling back to local JSON database storage due to bootstrap failure.");
+          this.isPostgresActive = false;
+          this.loadJson();
+        });
       } catch (err) {
         console.error("Database: Failed to initialize PG pool:", err);
         console.error("DATABASE_POOL_INITIALIZED=false");
@@ -244,6 +253,7 @@ export class Database {
         }
         this.isPostgresActive = false;
         this.loadJson();
+        this.initializationPromise = Promise.resolve();
       }
     } else {
       console.log("DATABASE_CONFIG_PRESENT=false");
@@ -332,6 +342,28 @@ export class Database {
             created_at TIMESTAMP WITH TIME ZONE NOT NULL,
             updated_at TIMESTAMP WITH TIME ZONE NOT NULL
           );
+        `);
+
+        // Canonical "accounts" Table for Google OAuth
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS accounts (
+            id VARCHAR(255) PRIMARY KEY,
+            user_id VARCHAR(255) NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+            provider_id VARCHAR(255) NOT NULL,
+            account_id VARCHAR(255) NOT NULL,
+            access_token TEXT,
+            refresh_token TEXT,
+            id_token TEXT,
+            access_token_expires_at VARCHAR(255),
+            refresh_token_expires_at VARCHAR(255),
+            scope TEXT,
+            password_hash TEXT,
+            created_at VARCHAR(255) NOT NULL,
+            updated_at VARCHAR(255) NOT NULL
+          );
+        `);
+        await client.query(`
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_provider_account ON accounts (provider_id, account_id);
         `);
 
         // 4. "verification" Table
@@ -471,6 +503,7 @@ export class Database {
         if (!this.data.user) this.data.user = [];
         if (!this.data.session) this.data.session = [];
         if (!this.data.account) this.data.account = [];
+        if (!this.data.accounts) this.data.accounts = [];
         if (!this.data.verification) this.data.verification = [];
         if (!this.data.workspaces) this.data.workspaces = [];
         if (!this.data.workspace_members) this.data.workspace_members = [];
@@ -513,9 +546,30 @@ export class Database {
    * Standardized query method (supports both Sync JSON and Async Promise)
    */
   public query<T = any>(sql: string, params: any[] = []): any {
-    if (this.isPostgresActive && this.pgPool) {
-      const translatedSql = this.translateSql(sql);
-      return this.pgPool.query(translatedSql, params).then(res => res.rows);
+    if (this.isPostgresActive) {
+      const run = () => {
+        if (this.pgPool) {
+          const translatedSql = this.translateSql(sql);
+          return this.pgPool.query(translatedSql, params)
+            .then(res => res.rows)
+            .catch(err => {
+              console.error("Database connection query failed. Degrading to local JSON fallback engine:", err);
+              this.isPostgresActive = false;
+              this.loadJson();
+              return this.query(sql, params);
+            });
+        }
+        return Promise.resolve([]);
+      };
+      if (this.initializationPromise) {
+        return this.initializationPromise.then(run).catch(err => {
+          console.error("Database initialization promise failed during query. Degrading to local JSON fallback:", err);
+          this.isPostgresActive = false;
+          this.loadJson();
+          return this.query(sql, params);
+        });
+      }
+      return run();
     }
 
     // JSON fallback synchronous implementation
@@ -606,6 +660,11 @@ export class Database {
       return (this.data.account || []) as unknown as T[];
     }
 
+    // 8b. SELECT FROM ACCOUNTS
+    if (normalizedSql.startsWith("select * from accounts") || normalizedSql.startsWith("select * from \"accounts\"")) {
+      return (this.data.accounts || []) as unknown as T[];
+    }
+
     // 9. SELECT FROM VERIFICATION
     if (normalizedSql.startsWith("select * from verification") || normalizedSql.startsWith("select * from \"verification\"")) {
       return (this.data.verification || []) as unknown as T[];
@@ -628,9 +687,30 @@ export class Database {
    * Standardized execute/write method (supports both Sync JSON and Async Promise)
    */
   public execute(sql: string, params: any[] = []): any {
-    if (this.isPostgresActive && this.pgPool) {
-      const translatedSql = this.translateSql(sql);
-      return this.pgPool.query(translatedSql, params).then(() => {});
+    if (this.isPostgresActive) {
+      const run = () => {
+        if (this.pgPool) {
+          const translatedSql = this.translateSql(sql);
+          return this.pgPool.query(translatedSql, params)
+            .then(() => {})
+            .catch(err => {
+              console.error("Database connection execution failed. Degrading to local JSON fallback engine:", err);
+              this.isPostgresActive = false;
+              this.loadJson();
+              return this.execute(sql, params);
+            });
+        }
+        return Promise.resolve();
+      };
+      if (this.initializationPromise) {
+        return this.initializationPromise.then(run).catch(err => {
+          console.error("Database initialization promise failed during execute. Degrading to local JSON fallback:", err);
+          this.isPostgresActive = false;
+          this.loadJson();
+          return this.execute(sql, params);
+        });
+      }
+      return run();
     }
 
     // JSON fallback synchronous implementation
@@ -698,6 +778,38 @@ export class Database {
         updatedAt: String(updatedAt)
       };
       this.data.account.push(newAccount);
+      this.saveJson();
+      return;
+    }
+
+    // 3b. INSERT INTO ACCOUNTS
+    if (normalizedSql.startsWith("insert into accounts") || normalizedSql.startsWith("insert into \"accounts\"")) {
+      const [id, userId, providerId, accountId, accessToken, refreshToken, idToken, accessTokenExpiresAt, refreshTokenExpiresAt, scope, passwordHash, createdAt, updatedAt] = params;
+      const newAccount: Account = {
+        id: String(id),
+        user_id: userId ? String(userId) : "",
+        userId: userId ? String(userId) : "",
+        provider_id: providerId ? String(providerId) : "",
+        providerId: providerId ? String(providerId) : "",
+        account_id: accountId ? String(accountId) : "",
+        accountId: accountId ? String(accountId) : "",
+        access_token: accessToken ? String(accessToken) : null,
+        accessToken: accessToken ? String(accessToken) : null,
+        refresh_token: refreshToken ? String(refreshToken) : null,
+        refreshToken: refreshToken ? String(refreshToken) : null,
+        id_token: idToken ? String(idToken) : null,
+        idToken: idToken ? String(idToken) : null,
+        access_token_expires_at: accessTokenExpiresAt ? String(accessTokenExpiresAt) : null,
+        accessTokenExpiresAt: accessTokenExpiresAt ? String(accessTokenExpiresAt) : null,
+        refresh_token_expires_at: refreshTokenExpiresAt ? String(refreshTokenExpiresAt) : null,
+        refreshTokenExpiresAt: refreshTokenExpiresAt ? String(refreshTokenExpiresAt) : null,
+        scope: scope ? String(scope) : null,
+        password: passwordHash ? String(passwordHash) : null,
+        createdAt: String(createdAt),
+        updatedAt: String(updatedAt)
+      };
+      if (!this.data.accounts) this.data.accounts = [];
+      this.data.accounts.push(newAccount);
       this.saveJson();
       return;
     }
@@ -864,7 +976,7 @@ export class Database {
     if (this.isPostgresActive && this.pgPool) {
       // In PostgreSQL mode, truncate tables safely
       this.pgPool.query(`
-        TRUNCATE TABLE audit_logs, assets, applications, workspace_members, workspaces, "session", "account", "verification", "user", auth_handoff_codes, password_reset_tokens CASCADE;
+        TRUNCATE TABLE audit_logs, assets, applications, workspace_members, workspaces, "session", "account", accounts, "verification", "user", auth_handoff_codes, password_reset_tokens CASCADE;
       `).catch(err => console.error("Database: Failed to truncate PostgreSQL tables:", err));
       return;
     }
@@ -872,6 +984,7 @@ export class Database {
       user: [],
       session: [],
       account: [],
+      accounts: [],
       verification: [],
       workspaces: [],
       workspace_members: [],
@@ -915,6 +1028,9 @@ export class Database {
       };
     } catch (err: any) {
       console.error("Database connection check failed:", err);
+      console.log("Database: Connection error detected during health check. Degrading to local JSON fallback database.");
+      this.isPostgresActive = false;
+      this.loadJson();
       const refId = `DB-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
       return { status: "degraded", database: "unreachable", reference: refId };
     }

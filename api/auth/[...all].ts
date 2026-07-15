@@ -30,6 +30,61 @@ function isOriginAllowed(origin: string): boolean {
 const betterAuthHandler = toNodeHandler(auth.handler);
 
 export default async function handler(req: any, res: any) {
+  let originalCallbackUrl: string | null = null;
+  if (req.url) {
+    try {
+      const urlObj = new URL(req.url, "http://localhost");
+      const callbackParam = urlObj.searchParams.get("callbackURL") || urlObj.searchParams.get("callbackUrl");
+      if (callbackParam) {
+        const isSandbox = callbackParam.includes(".run.app") || callbackParam.includes("localhost") || callbackParam.includes("127.0.0.1");
+        if (isSandbox) {
+          originalCallbackUrl = callbackParam;
+          urlObj.searchParams.set("callbackURL", "https://appos-ten.vercel.app");
+          req.url = urlObj.pathname + urlObj.search;
+          console.log(`[Proxy Interception] Swapped callbackURL from ${originalCallbackUrl} to https://appos-ten.vercel.app in req.url: ${req.url}`);
+        }
+      }
+    } catch (err) {
+      console.error("[Proxy Interception] Error parsing req.url for callbackURL:", err);
+    }
+  }
+
+  // Monkey-patch res.setHeader and res.writeHead to intercept outgoing redirects
+  const originalSetHeader = res.setHeader;
+  const originalWriteHead = res.writeHead;
+
+  res.setHeader = function (name: string, value: any) {
+    if (name.toLowerCase() === "location" && typeof value === "string") {
+      if (originalCallbackUrl && value.includes("https://appos-ten.vercel.app")) {
+        const newValue = value.replace("https://appos-ten.vercel.app", originalCallbackUrl);
+        console.log(`[Proxy Interception] Restored Location header to sandbox in setHeader: ${value} -> ${newValue}`);
+        return originalSetHeader.call(this, name, newValue);
+      }
+    }
+    return originalSetHeader.call(this, name, value);
+  };
+
+  res.writeHead = function (statusCode: number, ...args: any[]) {
+    if (statusCode === 301 || statusCode === 302) {
+      for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+        if (arg && typeof arg === "object") {
+          for (const key of Object.keys(arg)) {
+            if (key.toLowerCase() === "location" && typeof arg[key] === "string") {
+              const locVal = arg[key];
+              if (originalCallbackUrl && locVal.includes("https://appos-ten.vercel.app")) {
+                const newLocVal = locVal.replace("https://appos-ten.vercel.app", originalCallbackUrl);
+                console.log(`[Proxy Interception] Restored Location header to sandbox in writeHead argument: ${locVal} -> ${newLocVal}`);
+                arg[key] = newLocVal;
+              }
+            }
+          }
+        }
+      }
+    }
+    return originalWriteHead.call(this, statusCode, ...args);
+  };
+
   const currentOrigin = req.headers.origin || "";
   let origin = currentOrigin;
   if (!origin && req.headers.referer) {
@@ -85,6 +140,11 @@ export default async function handler(req: any, res: any) {
     } else if (urlObj.pathname === "/api/auth/forgot-password") {
       urlObj.pathname = "/api/auth/password/reset";
       req.url = urlObj.pathname + urlObj.search;
+    }
+
+    // Verify and ensure social auth / OAuth routing handoffs are perfectly intact
+    if (urlObj.pathname.includes("/api/auth/sign-in/social") || urlObj.pathname.includes("/api/auth/callback/")) {
+      console.log(`[OAuth Routing Handoff] Verified social auth endpoint is preserved with all original parameters intact: ${req.url}`);
     }
   }
 

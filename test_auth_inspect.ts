@@ -3,6 +3,7 @@ import { auth } from "./api/_lib/auth";
 
 async function test() {
   console.log("BETTER_AUTH_URL Env in test:", process.env.BETTER_AUTH_URL);
+  console.log("auth.options.advanced in test:", auth.options?.advanced);
   
   const fn = auth.options?.trustedOrigins;
   if (typeof fn === "function") {

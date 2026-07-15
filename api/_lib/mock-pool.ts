@@ -12,6 +12,7 @@ function loadMockDb() {
         user: data.user || [],
         session: data.session || [],
         account: data.account || [],
+        accounts: data.accounts || [],
         verification: data.verification || []
       };
     }
@@ -22,6 +23,7 @@ function loadMockDb() {
     user: [],
     session: [],
     account: [],
+    accounts: [],
     verification: []
   };
 }
@@ -44,6 +46,7 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[] } {
   const getTableName = (str: string): string => {
     if (str.includes('"user"')) return "user";
     if (str.includes('"session"')) return "session";
+    if (str.includes('"accounts"')) return "accounts";
     if (str.includes('"account"')) return "account";
     if (str.includes('"verification"')) return "verification";
     return "";

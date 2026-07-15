@@ -1,22 +1,31 @@
 import { createAuthClient } from "better-auth/react";
 
 const getBaseURL = () => {
+  if (typeof window !== "undefined") {
+    const hostname = window.location.hostname;
+    // Detect if we are in local development, a preview sandbox frame, or a Vercel preview
+    const isLocalOrPreview =
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname.endsWith(".run.app") ||
+      hostname.endsWith(".google.com") ||
+      hostname.endsWith(".googleusercontent.com") ||
+      hostname.includes("gitpod") ||
+      hostname.includes("github") ||
+      (hostname !== "appos.onrender.com" && hostname !== "appos-ten.vercel.app");
+
+    if (isLocalOrPreview) {
+      return window.location.origin;
+    }
+  }
+
   const envUrl = (import.meta as any).env.VITE_API_URL;
   if (envUrl) {
     return envUrl.trim();
   }
   
   if (typeof window !== "undefined") {
-    const hostname = window.location.hostname;
-    if (hostname === "appos-ten.vercel.app") {
-      return "https://appos.onrender.com";
-    }
-    if (hostname === "appos.onrender.com") {
-      return "https://appos.onrender.com";
-    }
-    if (hostname.endsWith(".run.app") || hostname === "localhost" || hostname === "127.0.0.1") {
-      return window.location.origin;
-    }
+    return window.location.origin;
   }
 
   const isDev = (import.meta as any).env.DEV || (import.meta as any).env.MODE === "development";

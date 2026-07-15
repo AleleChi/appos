@@ -37,9 +37,6 @@ if (!databaseUrl) {
 const betterAuthSecret = requireServerEnv("BETTER_AUTH_SECRET", "appos-default-better-auth-secret-key-32-chars-long");
 const betterAuthUrl = requireServerEnv("BETTER_AUTH_URL", "http://localhost:3000");
 
-const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim() || "";
-const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim() || "";
-
 const globalForAuth = globalThis as unknown as {
   apposAuthPool?: Pool;
 };
@@ -114,37 +111,32 @@ const getDynamicTrustedOrigins = (request?: Request): string[] => {
   const list = [...staticTrustedOrigins];
   if (!request) return list;
 
-  const originalOrigin = request.headers.get("x-original-origin") || "";
-  const originalReferer = request.headers.get("x-original-referer") || "";
-  const originHeader = request.headers.get("origin") || request.headers.get("referer") || "";
-
-  const checkAndAdd = (urlStr: string) => {
-    if (!urlStr) return;
+  const addOrigin = (val: string | null) => {
+    if (!val) return;
     try {
-      const parsed = new URL(urlStr);
-      const hostname = parsed.hostname;
-      const origin = parsed.origin;
-
-      if (
-        hostname.endsWith(".run.app") ||
-        hostname.endsWith(".googleusercontent.com") ||
-        hostname.endsWith(".google.com") ||
-        hostname === "localhost" ||
-        hostname === "127.0.0.1" ||
-        hostname === "0.0.0.0"
-      ) {
-        if (!list.includes(origin)) {
-          list.push(origin);
-        }
+      const trimmed = val.trim();
+      if (!trimmed || trimmed === "null") return;
+      
+      let originVal = trimmed;
+      if (originVal.includes("://")) {
+        originVal = new URL(originVal).origin;
+      } else {
+        originVal = new URL(`https://${originVal}`).origin;
+      }
+      
+      if (originVal && !list.includes(originVal)) {
+        list.push(originVal);
+        console.log(`[Dynamic Origin] Added trustedOrigin: ${originVal}`);
       }
     } catch {
-      // ignore
+      // ignore parsing failures
     }
   };
 
-  checkAndAdd(originalOrigin);
-  checkAndAdd(originalReferer);
-  checkAndAdd(originHeader);
+  addOrigin(request.headers.get("x-original-origin"));
+  addOrigin(request.headers.get("x-original-referer"));
+  addOrigin(request.headers.get("origin"));
+  addOrigin(request.headers.get("referer"));
 
   return list;
 };
@@ -154,6 +146,7 @@ export const auth = betterAuth({
   database: {
     db: kyselyDb,
     provider: "postgres",
+    type: "postgres",
     usePlural: false
   },
 
@@ -264,15 +257,36 @@ export const auth = betterAuth({
   },
 
   socialProviders: {
-    ...(googleClientId && googleClientSecret ? {
-      google: {
-        clientId: googleClientId,
-        clientSecret: googleClientSecret
-      }
-    } : {})
+    google: {
+      clientId: (() => {
+        const id = process.env.GOOGLE_CLIENT_ID?.trim();
+        if (!id) {
+          throw new Error("[AppOS Auth Configuration] CRITICAL: Missing required environment variable GOOGLE_CLIENT_ID for Google OAuth initialization.");
+        }
+        return id;
+      })(),
+      clientSecret: (() => {
+        const secret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+        if (!secret) {
+          throw new Error("[AppOS Auth Configuration] CRITICAL: Missing required environment variable GOOGLE_CLIENT_SECRET for Google OAuth initialization.");
+        }
+        return secret;
+      })()
+    }
   },
 
   account: {
+    modelName: "accounts",
+    fields: {
+      userId: "user_id",
+      providerId: "provider_id",
+      accountId: "account_id",
+      accessToken: "access_token",
+      refreshToken: "refresh_token",
+      idToken: "id_token",
+      accessTokenExpiresAt: "access_token_expires_at",
+      refreshTokenExpiresAt: "refresh_token_expires_at"
+    },
     accountLinking: {
       enabled: true,
       disableImplicitLinking: true

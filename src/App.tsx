@@ -43,9 +43,27 @@ export default function App() {
   >("home");
   const [analyzingUrl, setAnalyzingUrl] = useState<string | null>(null);
 
-  // Use the reactive Better Auth session hook
-  const { data: sessionData, isPending: isSessionLoading } = (authClient as any).useSession();
+  // Use the reactive Better Auth session hook with a safety timeout boundary
+  const { data: sessionData, isPending: isBetterAuthLoading } = (authClient as any).useSession();
+  const [isSessionLoading, setIsSessionLoading] = useState(true);
   const user = sessionData?.user || null;
+
+  useEffect(() => {
+    if (!isBetterAuthLoading) {
+      setIsSessionLoading(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      if (isBetterAuthLoading) {
+        console.warn("Authentication Boundary: Session retrieval timed out. Falling back to login layout.");
+        setIsSessionLoading(false);
+        setCurrentPage("login");
+      }
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [isBetterAuthLoading]);
 
   // Smooth scroll helper
   const scrollToSection = (id: string) => {
