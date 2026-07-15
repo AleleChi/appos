@@ -97,7 +97,7 @@ app.set("trust proxy", 1);
 
 // CORS Middleware to allow cross-origin credential-carrying requests
 app.use((req, res, next) => {
-  const frontendUrl = process.env.FRONTEND_URL || "https://appos-ten.vercel.app";
+  const frontendUrl = (process.env.FRONTEND_URL || "https://appos-ten.vercel.app").trim();
   const allowedOrigins = [
     "https://appos-ten.vercel.app",
     "https://appos.onrender.com",
@@ -105,8 +105,37 @@ app.use((req, res, next) => {
     "http://localhost:5173",
     frontendUrl
   ];
+
+  if (process.env.APP_URL) {
+    const appUrl = process.env.APP_URL.trim();
+    if (appUrl && !allowedOrigins.includes(appUrl)) {
+      allowedOrigins.push(appUrl);
+      if (appUrl.includes("ais-dev-")) {
+        const preUrl = appUrl.replace("ais-dev-", "ais-pre-");
+        if (!allowedOrigins.includes(preUrl)) {
+          allowedOrigins.push(preUrl);
+        }
+      }
+    }
+  }
+
+  if (process.env.BETTER_AUTH_TRUSTED_ORIGINS) {
+    process.env.BETTER_AUTH_TRUSTED_ORIGINS.split(",").forEach(o => {
+      const trimmed = o.trim();
+      if (trimmed && !allowedOrigins.includes(trimmed)) {
+        allowedOrigins.push(trimmed);
+      }
+    });
+  }
+
   const origin = req.headers.origin;
-  if (origin && allowedOrigins.includes(origin)) {
+  const isAiStudioPreview = origin && (
+    origin.endsWith(".run.app") ||
+    origin.endsWith(".googleusercontent.com") ||
+    origin.endsWith(".google.com")
+  );
+
+  if (origin && (allowedOrigins.includes(origin) || isAiStudioPreview)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   } else {
     res.setHeader("Access-Control-Allow-Origin", frontendUrl);

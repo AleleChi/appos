@@ -57,6 +57,40 @@ if (databaseUrl) {
   globalForAuth.apposAuthPool = pool;
 }
 
+const trustedOrigins: string[] = [
+  "https://appos-ten.vercel.app",
+  "https://appos.onrender.com",
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "https://*.run.app",
+  "https://*.googleusercontent.com",
+  "https://*.google.com"
+];
+
+if (process.env.APP_URL) {
+  const appUrl = process.env.APP_URL.trim();
+  if (appUrl && !trustedOrigins.includes(appUrl)) {
+    trustedOrigins.push(appUrl);
+    if (appUrl.includes("ais-dev-")) {
+      const preUrl = appUrl.replace("ais-dev-", "ais-pre-");
+      if (!trustedOrigins.includes(preUrl)) {
+        trustedOrigins.push(preUrl);
+      }
+    }
+  }
+}
+
+if (process.env.BETTER_AUTH_TRUSTED_ORIGINS) {
+  process.env.BETTER_AUTH_TRUSTED_ORIGINS.split(",").forEach(o => {
+    const trimmed = o.trim();
+    if (trimmed && !trustedOrigins.includes(trimmed)) {
+      trustedOrigins.push(trimmed);
+    }
+  });
+}
+
+console.log("[AppOS Auth] Evaluated trustedOrigins:", trustedOrigins);
+
 export const auth = betterAuth({
   database: pool,
 
@@ -64,15 +98,18 @@ export const auth = betterAuth({
 
   secret: betterAuthSecret,
 
-  trustedOrigins: [
-    "https://appos-ten.vercel.app",
-    "http://localhost:3000",
-    "http://localhost:5173"
-  ],
+  trustedOrigins,
+
+  advanced: {
+    defaultCookieAttributes: {
+      sameSite: "none",
+      secure: true
+    }
+  },
 
   emailAndPassword: {
     enabled: true,
-    requireEmailVerification: true,
+    requireEmailVerification: false,
     minPasswordLength: 12,
     maxPasswordLength: 128,
     revokeSessionsOnPasswordReset: true,
@@ -144,6 +181,24 @@ export const auth = betterAuth({
     cookieCache: {
       enabled: true,
       maxAge: 5 * 60
+    }
+  },
+
+  databaseHooks: {
+    user: {
+      create: {
+        before: async (user) => {
+          console.log(`[AppOS Auth] AUTH SIGNUP REQUEST RECEIVED
+EMAIL: ${user.email}
+DATABASE: Connection active, starting transaction
+BETTER_AUTH: Processing user insertion`);
+        },
+        after: async (user) => {
+          console.log(`[AppOS Auth] AUTH SIGNUP SUCCESS
+USER CREATED: ID: ${user.id}, Name: ${user.name}, Email: ${user.email}
+SESSION CREATED: Awaiting verification`);
+        }
+      }
     }
   }
 });

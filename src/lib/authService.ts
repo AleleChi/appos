@@ -40,7 +40,12 @@ export const authService = {
       const password = data.password || "";
       const name = email.split("@")[0];
 
-      const { error } = await (authClient as any).signUp.email({
+      console.log(`[AUTH CLIENT] AUTH SIGNUP REQUEST RECEIVED
+EMAIL: ${email}
+DATABASE: (Database insertion requested via Better Auth API)
+BETTER_AUTH: Initiating registration flow`);
+
+      const { data: signUpData, error } = await (authClient as any).signUp.email({
         name,
         email,
         password,
@@ -48,11 +53,19 @@ export const authService = {
       });
 
       if (error) {
+        console.error(`[AUTH CLIENT] AUTH SIGNUP FAILURE
+ERROR TYPE: ${error.status || "signUpError"}
+ERROR MESSAGE: ${error.message || "Could not complete signup. Please try again."}`);
+
         return {
           success: false,
           message: error.message || "Could not complete signup. Please try again."
         };
       }
+
+      console.log(`[AUTH CLIENT] AUTH SIGNUP SUCCESS
+USER CREATED: ID: ${signUpData?.user?.id || "N/A"}, Email: ${signUpData?.user?.email || email}
+SESSION CREATED: Active session pending verification`);
 
       return {
         success: true,
@@ -61,6 +74,9 @@ export const authService = {
         verificationRequired: true
       };
     } catch (err: any) {
+      console.error(`[AUTH CLIENT] AUTH SIGNUP FAILURE
+ERROR TYPE: Exception
+ERROR MESSAGE: ${err.message || String(err)}`);
       return handleError(err);
     }
   },
