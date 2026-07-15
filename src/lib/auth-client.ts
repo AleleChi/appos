@@ -5,8 +5,22 @@ const getBaseURL = () => {
   if (envUrl) {
     return envUrl.trim();
   }
+  
+  if (typeof window !== "undefined") {
+    const hostname = window.location.hostname;
+    if (hostname === "appos-ten.vercel.app") {
+      return "https://appos.onrender.com";
+    }
+    if (hostname === "appos.onrender.com") {
+      return "https://appos.onrender.com";
+    }
+    if (hostname.endsWith(".run.app") || hostname === "localhost" || hostname === "127.0.0.1") {
+      return window.location.origin;
+    }
+  }
+
   const isDev = (import.meta as any).env.DEV || (import.meta as any).env.MODE === "development";
-  return isDev ? "http://localhost:3000" : "https://appos-ten.vercel.app";
+  return isDev ? "http://localhost:3000" : "https://appos.onrender.com";
 };
 
 export const baseURL = getBaseURL();

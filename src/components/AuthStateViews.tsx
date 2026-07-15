@@ -6,6 +6,53 @@ import { AuthLayout, AuthLogo, FormField, PasswordField, PrimaryButton } from ".
 import { cn } from "../lib/utils";
 import { authClient } from "../lib/auth-client";
 
+// Translate technical database/server errors to elegant, actionable human language
+const translateError = (err: any): string => {
+  if (!err) return "An unexpected error occurred. Please try again.";
+  
+  const message = typeof err === "string" ? err : err.message || "";
+  const lower = message.toLowerCase();
+  
+  if (
+    lower.includes("cors") ||
+    lower.includes("network") ||
+    lower.includes("fetch") ||
+    lower.includes("socket") ||
+    lower.includes("failed to fetch") ||
+    lower.includes("connect")
+  ) {
+    return "We couldn't connect securely. Please verify your connection and try again.";
+  }
+  
+  if (
+    lower.includes("invalid combination") ||
+    lower.includes("user matching error") ||
+    lower.includes("invalid_credentials") ||
+    lower.includes("invalid credentials") ||
+    lower.includes("incorrect password") ||
+    lower.includes("invalid email or password") ||
+    lower.includes("authentication failed") ||
+    lower.includes("invalid email") ||
+    lower.includes("credential")
+  ) {
+    return "The email or password you entered is incorrect.";
+  }
+  
+  if (
+    lower.includes("sql unique") ||
+    lower.includes("unique index") ||
+    lower.includes("already exists") ||
+    lower.includes("user_already_exists") ||
+    lower.includes("email_already_in_use") ||
+    lower.includes("already in use") ||
+    lower.includes("email already")
+  ) {
+    return "An account with this email address already exists.";
+  }
+  
+  return message || "An unexpected error occurred. Please try again.";
+};
+
 /**
  * ============================================================================
  * REUSABLE APPOS AUTHENTICATION SYSTEM STATE COMPONENTS
@@ -151,7 +198,7 @@ export function AuthSupportAction() {
       href="mailto:support@appos.com?subject=AppOS%20Authentication%20Assistance"
       className="text-xs font-semibold text-slate-400 hover:text-slate-600 transition-colors mt-3 block"
     >
-      Contact Security Operations Support
+      Contact Support
     </a>
   );
 }
@@ -165,7 +212,7 @@ export function AuthSystemStatusIndicator() {
     <div className="flex items-center gap-1.5 justify-center bg-slate-50 border border-slate-100 rounded-lg px-3 py-1.5 text-slate-500 w-full max-w-xs mx-auto">
       <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
       <span className="font-mono text-[9px] font-bold uppercase tracking-widest">
-        APPOS AUTHENTICATION SYSTEM
+        SYSTEM ACTIVE
       </span>
     </div>
   );
@@ -278,9 +325,9 @@ export function AuthCallbackView({
           <div className="flex flex-col items-center justify-center py-4">
             <div className="w-9 h-9 border-[3px] border-slate-200 border-t-indigo-600 rounded-full animate-spin mb-4" />
             <div className="space-y-2 text-center">
-              <AuthStateTitle>Verifying Your Session...</AuthStateTitle>
+              <AuthStateTitle>Checking your session</AuthStateTitle>
               <AuthStateDescription>
-                Connecting to AppOS key vault to validate credentials...
+                Securing your connection and activating your workspace...
               </AuthStateDescription>
             </div>
           </div>
@@ -290,9 +337,9 @@ export function AuthCallbackView({
           <div className="flex flex-col items-center justify-center py-4">
             <AuthStateIcon type="success" icon={ShieldCheck} />
             <div className="space-y-2 text-center mt-6">
-              <AuthStateTitle>Security Verified</AuthStateTitle>
+              <AuthStateTitle>Welcome to AppOS</AuthStateTitle>
               <AuthStateDescription>
-                Handoff completed successfully. Redirecting to workspace...
+                Taking you to your workspace...
               </AuthStateDescription>
             </div>
           </div>
@@ -302,7 +349,7 @@ export function AuthCallbackView({
           <div className="flex flex-col items-center justify-center py-4 space-y-4">
             <AuthStateIcon type="error" icon={ShieldAlert} />
             <div className="space-y-2 text-center">
-              <AuthStateTitle>Handoff Verification Failed</AuthStateTitle>
+              <AuthStateTitle>Unable to verify session</AuthStateTitle>
               <AuthStateDescription>{errorDetails}</AuthStateDescription>
             </div>
             <PrimaryButton onClick={() => window.location.assign("/login")}>
@@ -347,9 +394,9 @@ export function AuthErrorView({
         <AuthStateIcon type="error" icon={ShieldAlert} />
         
         <div className="space-y-3.5">
-          <AuthStateTitle>Sign-In Encountered an Issue</AuthStateTitle>
+          <AuthStateTitle>Unable to sign in</AuthStateTitle>
           <AuthStateDescription>
-            The authentication handoff was not completed successfully. Please verify your internet connection, confirm your account exists, and try signing in again.
+            We couldn't secure a connection to your account. Please check your network and try signing in again.
           </AuthStateDescription>
         </div>
 
@@ -407,7 +454,7 @@ export function AuthVerifyEmailView({
   useEffect(() => {
     if (!token) {
       setStatus("error");
-      setErrorDetails("No active verification token was provided in the deep link routing request.");
+      setErrorDetails("The activation link is invalid or has expired.");
       return;
     }
 
@@ -419,11 +466,11 @@ export function AuthVerifyEmailView({
           setStatus("success");
         } else {
           setStatus("error");
-          setErrorDetails(res.message || "The verification link has expired, is invalid, or was already consumed.");
+          setErrorDetails(translateError(res.message) || "The activation link has expired or has already been used. Please request a new verification link.");
         }
       } catch (err: any) {
         setStatus("error");
-        setErrorDetails(err?.message || "An unexpected network error occurred during verification.");
+        setErrorDetails(translateError(err) || "We couldn't connect securely. Please verify your connection and try again.");
       }
     };
 
@@ -435,11 +482,11 @@ export function AuthVerifyEmailView({
       <AuthStateCard>
         {status === "loading" && (
           <>
-            <AuthLoadingIndicator text="Handshake: EMAIL_VALIDATION" />
+            <AuthLoadingIndicator text="Verifying email..." />
             <div className="space-y-2">
-              <AuthStateTitle>Verifying Email Address</AuthStateTitle>
+              <AuthStateTitle>Confirming email address</AuthStateTitle>
               <AuthStateDescription>
-                Validating your email ownership token against the AppOS cryptographic registries...
+                Securing your connection and activating your account...
               </AuthStateDescription>
             </div>
           </>
@@ -449,9 +496,9 @@ export function AuthVerifyEmailView({
           <>
             <AuthStateIcon type="success" icon={CheckCircle} />
             <div className="space-y-2">
-              <AuthStateTitle>Email Verified Successfully</AuthStateTitle>
+              <AuthStateTitle>Email verified</AuthStateTitle>
               <AuthStateDescription>
-                Thank you for verifying your email {email ? <strong className="text-slate-800">({email})</strong> : ""}. Your system status has been upgraded to active.
+                Your email address is verified. Your account is now active and ready.
               </AuthStateDescription>
             </div>
             <AuthStateActions>
@@ -466,7 +513,7 @@ export function AuthVerifyEmailView({
           <>
             <AuthStateIcon type="error" icon={ShieldAlert} />
             <div className="space-y-2">
-              <AuthStateTitle>Verification Failed</AuthStateTitle>
+              <AuthStateTitle>Verification expired</AuthStateTitle>
               <AuthStateDescription>{errorDetails}</AuthStateDescription>
             </div>
             {token && <AuthStateReference code={token.substring(0, 16) + "..."} />}
@@ -479,7 +526,7 @@ export function AuthVerifyEmailView({
               </PrimaryButton>
               <button
                 onClick={() => onNavigate("register")}
-                className="text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors"
+                className="text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors bg-transparent border-0 p-0 cursor-pointer"
               >
                 Create a New Account
               </button>
@@ -541,10 +588,10 @@ export function AuthLinkAccountView({
           }
         }, 1500);
       } else {
-        setError(res.message);
+        setError(translateError(res.message));
       }
     } catch (err: any) {
-      setError(err?.message || "An unexpected error occurred. Please try again.");
+      setError(translateError(err));
     } finally {
       setLoading(false);
     }
@@ -566,10 +613,10 @@ export function AuthLinkAccountView({
             </div>
             <div className="space-y-2">
               <h2 className="text-xl font-bold tracking-tight text-slate-800">
-                Accounts Linked Successfully
+                Accounts connected
               </h2>
               <p className="text-sm text-slate-500 max-w-sm">
-                Your standard AppOS account is now safely connected to Google Sign-In. Redirecting...
+                Your standard AppOS account is now connected to Google. Taking you to your workspace...
               </p>
             </div>
           </motion.div>
@@ -584,7 +631,7 @@ export function AuthLinkAccountView({
                 Confirm your identity
               </h2>
               <p className="text-sm text-slate-500 leading-relaxed">
-                An AppOS account already exists for <strong className="text-slate-800">{conflictEmail}</strong>. Confirm your current password to link Google securely.
+                An AppOS account already exists with this email <strong className="text-slate-800">({conflictEmail})</strong>. Enter your current password to link your Google account securely.
               </p>
             </div>
 
@@ -657,9 +704,9 @@ export function AuthNotFoundView({
       <AuthStateCard>
         <AuthStateIcon type="warning" icon={AlertTriangle} />
         <div className="space-y-2 text-center">
-          <AuthStateTitle>Page Not Found</AuthStateTitle>
+          <AuthStateTitle>Page not found</AuthStateTitle>
           <AuthStateDescription>
-            The requested AppOS system route does not exist or has been relocated to another security zone.
+            The page you are looking for doesn't exist or has been moved.
           </AuthStateDescription>
         </div>
         <AuthStateReference code="ERR_ROUTE_404" />
@@ -691,9 +738,9 @@ export function AuthServerErrorView({
       <AuthStateCard>
         <AuthStateIcon type="error" icon={ShieldAlert} />
         <div className="space-y-2 text-center">
-          <AuthStateTitle>Internal System Interruption</AuthStateTitle>
+          <AuthStateTitle>Something went wrong</AuthStateTitle>
           <AuthStateDescription>
-            An unexpected administrative or structural exception was detected. AppOS security systems have blocked the transaction.
+            We encountered an unexpected error. Please check your connection and try again.
           </AuthStateDescription>
         </div>
         <AuthStateReference code={error || "ERR_SYSTEM_500"} />

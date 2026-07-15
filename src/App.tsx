@@ -5,17 +5,14 @@
 
 import React, { useState, useEffect } from "react";
 import Navbar from "./components/Navbar";
-import HeroSection from "./components/HeroSection";
-import ProcessSection from "./components/ProcessSection";
-import FeatureSection from "./components/FeatureSection";
-import ScoreCard from "./components/ScoreCard";
-import SecuritySection from "./components/SecuritySection";
-import CTASection from "./components/CTASection";
 import Footer from "./components/Footer";
-import PricingSection from "./components/PricingSection";
-import SecurityPage from "./components/SecurityPage";
 import SignupPage from "./components/SignupPage";
 import DashboardPage from "./components/DashboardPage";
+
+// Lazy-loaded components for dynamic bundle splitting
+const LandingPage = React.lazy(() => import("./components/LandingPage"));
+const PricingPage = React.lazy(() => import("./components/PricingSection"));
+const SecurityPage = React.lazy(() => import("./components/SecurityPage"));
 import { authService } from "./lib/authService";
 import { authClient } from "./lib/auth-client";
 import { 
@@ -228,101 +225,82 @@ if (isSessionLoading) {
 
       {/* Main Content Area */}
       <main className="flex-1">
-        {currentPage === "dashboard" ? (
-          <DashboardPage
-            user={user}
-            onLogout={async () => {
-              await authService.logout();
-              setCurrentPage("home");
-              window.scrollTo({ top: 0, behavior: "smooth" });
-            }}
-          />
-        ) : currentPage === "auth-callback" ? (
-          <AuthCallbackView
-            onSuccess={() => {
-              setCurrentPage("dashboard");
-            }}
-          />
-        ) : currentPage === "auth-error" ? (
-          <AuthErrorView
-            onNavigate={(page) => setCurrentPage(page)}
-          />
-        ) : currentPage === "auth-link-account" ? (
-          <AuthLinkAccountView
-            onSuccess={() => {
-              setCurrentPage("dashboard");
-            }}
-            onNavigate={(page) => setCurrentPage(page)}
-          />
-        ) : currentPage === "verify-email" ? (
-          <AuthVerifyEmailView
-            onNavigate={(page) => setCurrentPage(page)}
-          />
-        ) : isAuthPage ? (
-          <SignupPage
-            initialMode={
-              currentPage === "login"
-                ? "login"
-                : currentPage === "forgot-password"
-                ? "forgot-password"
-                : currentPage === "reset-password"
-                ? "reset-password"
-                : "signup"
-            }
-            onBackToHome={() => {
-              setCurrentPage("home");
-              window.scrollTo({ top: 0, behavior: "smooth" });
-            }}
-            onSignupSuccess={() => {
-              setTimeout(() => {
-                setCurrentPage("dashboard");
+        <React.Suspense fallback={null}>
+          {currentPage === "dashboard" ? (
+            <DashboardPage
+              user={user}
+              onLogout={async () => {
+                await authService.logout();
+                setCurrentPage("home");
                 window.scrollTo({ top: 0, behavior: "smooth" });
-              }, 1200);
-            }}
-          />
-        ) : currentPage === "home" ? (
-          <>
-            {/* 2. Hero Section */}
-            <HeroSection
+              }}
+            />
+          ) : currentPage === "auth-callback" ? (
+            <AuthCallbackView
+              onSuccess={() => {
+                setCurrentPage("dashboard");
+              }}
+            />
+          ) : currentPage === "auth-error" ? (
+            <AuthErrorView
+              onNavigate={(page) => setCurrentPage(page)}
+            />
+          ) : currentPage === "auth-link-account" ? (
+            <AuthLinkAccountView
+              onSuccess={() => {
+                setCurrentPage("dashboard");
+              }}
+              onNavigate={(page) => setCurrentPage(page)}
+            />
+          ) : currentPage === "verify-email" ? (
+            <AuthVerifyEmailView
+              onNavigate={(page) => setCurrentPage(page)}
+            />
+          ) : isAuthPage ? (
+            <SignupPage
+              initialMode={
+                currentPage === "login"
+                  ? "login"
+                  : currentPage === "forgot-password"
+                  ? "forgot-password"
+                  : currentPage === "reset-password"
+                  ? "reset-password"
+                  : "signup"
+              }
+              onBackToHome={() => {
+                setCurrentPage("home");
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+              onSignupSuccess={() => {
+                setTimeout(() => {
+                  setCurrentPage("dashboard");
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }, 1200);
+              }}
+            />
+          ) : currentPage === "home" ? (
+            <LandingPage
               onAnalyze={handleAnalyzeUrl}
               onSeeHowItWorks={() => scrollToSection("solutions")}
+              analyzingUrl={analyzingUrl}
+              onStartFree={handleGetStartedAction}
             />
-
-            {/* 3. How It Works (Process Steps) */}
-            <ProcessSection />
-
-            {/* 4. Native Capabilities (Feature Grid) */}
-            <FeatureSection />
-
-            {/* 5. App Readiness Score (Diagnostics Dashboard) */}
-            <div id="diagnostics">
-              <ScoreCard
-                analyzingUrl={analyzingUrl}
-                onScanComplete={() => console.log("Scan completed successfully.")}
-              />
-            </div>
-
-            {/* 6. Security Section (Dark Contrast block) */}
-            <SecuritySection />
-
-            {/* 7. Final CTA Banner */}
-            <CTASection onStartFree={handleGetStartedAction} />
-          </>
-        ) : currentPage === "pricing" ? (
-          /* 8. Dedicated High Fidelity Pricing Page */
-          <PricingSection onGetStarted={handleGetStartedAction} />
-        ) : currentPage === "security" ? (
-          /* 8b. Dedicated High Fidelity Security Page */
-          <SecurityPage onGetStarted={handleGetStartedAction} />
-        ) : currentPage === "server-error" ? (
-          <AuthServerErrorView
-            onNavigate={(page) => setCurrentPage(page)}
-          />
-        ) : (
-          <AuthNotFoundView
-            onNavigate={(page) => setCurrentPage(page)}
-          />
-        )}
+          ) : currentPage === "pricing" ? (
+            /* 8. Dedicated High Fidelity Pricing Page */
+            <PricingPage onGetStarted={handleGetStartedAction} />
+          ) : currentPage === "security" ? (
+            /* 8b. Dedicated High Fidelity Security Page */
+            <SecurityPage onGetStarted={handleGetStartedAction} />
+          ) : currentPage === "server-error" ? (
+            <AuthServerErrorView
+              onNavigate={(page) => setCurrentPage(page)}
+            />
+          ) : (
+            <AuthNotFoundView
+              onNavigate={(page) => setCurrentPage(page)}
+            />
+          )}
+        </React.Suspense>
       </main>
 
       {/* 9. Shared Footer Section (Hidden on dashboard and auth screens) */}

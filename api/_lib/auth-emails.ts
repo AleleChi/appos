@@ -40,6 +40,21 @@ export async function sendVerificationEmail({ email, url }: { email: string; url
 
   if (resend) {
     try {
+      console.log(`
+[RESEND SANDBOX DIAGNOSTIC WARNING]
+=========================================
+TARGET RECIPIENT EMAIL: ${email}
+SENDER ADDRESS: ${from}
+RESEND API EXECUTION STARTING FOR: "Verify your AppOS email"
+NOTE: If using the Resend Sandbox (onboarding@resend.dev), emails will ONLY be delivered to the registered Resend account owner. All other recipient addresses will be silently dropped by Resend after acceptance until a custom domain is verified.
+=========================================
+`);
+      console.log(`[Resend Diagnostics] INVOKING RESEND API. Recipient: ${email}. From: ${from}. Subject: "Verify your AppOS email". Full String Payload:`, {
+        from,
+        to: email,
+        subject: "Verify your AppOS email",
+        html
+      });
       const response = await resend.emails.send({
         from,
         to: email,
@@ -93,6 +108,21 @@ export async function sendResetPasswordEmail({ email, url }: { email: string; ur
 
   if (resend) {
     try {
+      console.log(`
+[RESEND SANDBOX DIAGNOSTIC WARNING]
+=========================================
+TARGET RECIPIENT EMAIL: ${email}
+SENDER ADDRESS: ${from}
+RESEND API EXECUTION STARTING FOR: "Reset your AppOS password"
+NOTE: If using the Resend Sandbox (onboarding@resend.dev), emails will ONLY be delivered to the registered Resend account owner. All other recipient addresses will be silently dropped by Resend after acceptance until a custom domain is verified.
+=========================================
+`);
+      console.log(`[Resend Diagnostics] INVOKING RESEND API. Recipient: ${email}. From: ${from}. Subject: "Reset your AppOS password". Full String Payload:`, {
+        from,
+        to: email,
+        subject: "Reset your AppOS password",
+        html
+      });
       const response = await resend.emails.send({
         from,
         to: email,

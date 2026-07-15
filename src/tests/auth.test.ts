@@ -1,5 +1,11 @@
+process.env.BETTER_AUTH_URL = "http://localhost:3001";
+process.env.BETTER_AUTH_SECRET = process.env.BETTER_AUTH_SECRET || "appos-default-better-auth-secret-key-32-chars-long";
+
 import crypto from "crypto";
 import bcryptjs from "bcryptjs";
+import express from "express";
+import http from "http";
+import handler from "../../api/auth/[...all]";
 import { Database } from "../lib/db";
 
 /**
@@ -142,7 +148,7 @@ function runMockSignup(payload: SignupPayload, ip: string = "127.0.0.1"): { stat
   }
 
   // Duplicate Check
-  const existing = testDb.query("SELECT * FROM users WHERE email = ?", [emailNormalized]);
+  const existing = testDb.query("SELECT * FROM \"user\" WHERE email = ?", [emailNormalized]);
   if (existing.length > 0) {
     // Audit Log duplicate attempt internally, but return generic error for Account Enumeration Protection
     testDb.execute(
@@ -158,8 +164,8 @@ function runMockSignup(payload: SignupPayload, ip: string = "127.0.0.1"): { stat
   const now = new Date().toISOString();
 
   testDb.execute(
-    "INSERT INTO users (id, email, password_hash, email_verified_at, created_at, updated_at, last_login_at)",
-    [userId, emailNormalized, hash, null, now, now, null]
+    "INSERT INTO \"user\" (id, name, email, emailVerified, image, createdAt, updatedAt)",
+    [userId, "Test User", emailNormalized, false, null, now, now]
   );
 
   return { status: 201, body: { userCreated: true, verificationRequired: true } };
@@ -299,6 +305,217 @@ async function runTests() {
   testDb.execute("UPDATE auth_handoff_codes SET used_at = ? WHERE id = ?", [new Date().toISOString(), recordId]);
   const lookupUsed = testDb.query("SELECT * FROM auth_handoff_codes WHERE code_hash = ?", [codeHash]);
   assert("BFF Handoff: Code marked used and recognized as invalid for replay", lookupUsed.length === 1 && lookupUsed[0].used_at !== null);
+
+  // --- INTEGRATION TESTS: Better Auth + Express Server + PostgreSQL handshake ---
+  console.log("\n==========================================================");
+  console.log("⚡ STARTING BETTER AUTH & PG INTEGRATION TESTS (REAL PORT 3001)");
+  console.log("==========================================================");
+
+  const INTEGRATION_PORT = 3001;
+  const serverUrl = `http://localhost:${INTEGRATION_PORT}`;
+  const integrationApp = express();
+  
+  // CORS check and handler forwarding
+  integrationApp.all("/api/auth/*", async (req, res) => {
+    try {
+      await handler(req, res);
+    } catch (err: any) {
+      console.error("[Integration Server] Error:", err);
+      res.status(500).json({ error: err.message || "Internal server error" });
+    }
+  });
+
+  const integrationServer = http.createServer(integrationApp);
+  
+  await new Promise<void>((resolve) => {
+    integrationServer.listen(INTEGRATION_PORT, () => {
+      resolve();
+    });
+  });
+
+  console.log(`[Integration Server] Listening on ${serverUrl}`);
+
+  try {
+    const testEmail = `integration-user-${crypto.randomUUID().substring(0, 8)}@gmail.com`;
+    const testPassword = "Secure_Integration_Password_123!";
+    const testName = "Integration User";
+
+    // 1. User Registration Assertion
+    console.log(`[Stage 1] Registering user ${testEmail}...`);
+    const signupRes = await fetch(`${serverUrl}/api/auth/signup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: testEmail, password: testPassword, name: testName })
+    });
+    
+    const signupStatus = signupRes.status;
+    const signupBody = await signupRes.json().catch(() => ({}));
+    console.log(`[Stage 1] Response Status: ${signupStatus}, Body:`, signupBody);
+    
+    assert(
+      "Integration: User Registration Succeeds (HTTP 200 or 201)",
+      signupStatus === 200 || signupStatus === 201
+    );
+
+    // Wait for the asynchronous email verification lifecycle hook to run and set the global URL
+    console.log("[Test Helper] Waiting 1000ms for async email verification hook...");
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // Verify email of the test user so they can log in since requireEmailVerification is now true
+    if (process.env.DATABASE_URL) {
+      console.log(`[Test Helper] Connecting to real database to verify email for ${testEmail}...`);
+      const { Pool: PgPool } = await import("pg");
+      const testPool = new PgPool({ connectionString: process.env.DATABASE_URL });
+      try {
+        const updateResult = await testPool.query('UPDATE "user" SET "emailVerified" = true WHERE email = $1', [testEmail]);
+        console.log(`[Test Helper] Successfully verified email for ${testEmail} in PostgreSQL. Rows affected: ${updateResult.rowCount}`);
+      } catch (dbErr) {
+        console.error(`[Test Helper] Failed to verify email in DB:`, dbErr);
+      } finally {
+        await testPool.end();
+      }
+    } else {
+      console.log(`[Test Helper] JSON fallback mode, updating email_verified in local JSON file...`);
+      try {
+        const fs = await import("fs");
+        const path = await import("path");
+        const filePath = path.join(process.cwd(), "app_database.json");
+        if (fs.existsSync(filePath)) {
+          const fileData = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+          if (fileData.user) {
+            const u = fileData.user.find((x: any) => x.email === testEmail);
+            if (u) {
+              u.emailVerified = true;
+              fs.writeFileSync(filePath, JSON.stringify(fileData, null, 2));
+              console.log(`[Test Helper] Successfully verified email for ${testEmail} in app_database.json`);
+            }
+          }
+        }
+      } catch (fsErr) {
+        console.error(`[Test Helper] Failed to update local fallback DB:`, fsErr);
+      }
+    }
+
+    let lastUrl = (global as any).lastVerificationUrl;
+    if (!lastUrl) {
+      console.log("[Test Helper] lastVerificationUrl not found immediately. Polling for up to 5 seconds...");
+      for (let i = 0; i < 50; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        lastUrl = (global as any).lastVerificationUrl;
+        if (lastUrl) {
+          console.log(`[Test Helper] Found verification URL after polling ${i * 100 + 100}ms.`);
+          break;
+        }
+      }
+    }
+
+    if (lastUrl) {
+      const localVerificationUrl = lastUrl.replace(/https:\/\/[^\/]+/, serverUrl);
+      console.log(`[Test Helper] Found verification URL, executing HTTP verification GET to ${localVerificationUrl}...`);
+      try {
+        const verifyRes = await fetch(localVerificationUrl, { redirect: "manual" });
+        const redirectLoc = verifyRes.headers.get("location");
+        console.log(`[Test Helper] Verification HTTP status: ${verifyRes.status}, Location: ${redirectLoc}`);
+        
+        // Print the user record from the database to inspect emailVerified state
+        if (process.env.DATABASE_URL) {
+          const { Pool: PgPool } = await import("pg");
+          const testPool = new PgPool({ connectionString: process.env.DATABASE_URL });
+          try {
+            const checkRes = await testPool.query('SELECT id, email, "emailVerified" FROM "user" WHERE email = $1', [testEmail]);
+            console.log(`[Test Helper] DB verification state check AFTER verify GET request:`, checkRes.rows);
+          } finally {
+            await testPool.end();
+          }
+        }
+      } catch (verifyErr) {
+        console.error(`[Test Helper] Verification HTTP request failed:`, verifyErr);
+      }
+    } else {
+      console.error("[Test Helper] CRITICAL: Verification URL was not captured during registration!");
+    }
+
+    // 2. Duplicate Registration Rejection Assertion
+    console.log(`[Stage 2] Registering duplicate user with email ${testEmail}...`);
+    const dupRes = await fetch(`${serverUrl}/api/auth/signup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: testEmail, password: testPassword, name: testName })
+    });
+    
+    const dupStatus = dupRes.status;
+    const dupBody = await dupRes.json().catch(() => ({}));
+    console.log(`[Stage 2] Duplicate Response Status: ${dupStatus}, Body:`, dupBody);
+    
+    assert(
+      "Integration: Duplicate Email Registration Rejected Gracefully (HTTP 400 or 422)",
+      dupStatus >= 400 && dupStatus < 500
+    );
+
+    // 3. Session Authentication & Secure Cookie Propagation Assertion
+    console.log(`[Stage 3] Logging in with credentials...`);
+    const loginRes = await fetch(`${serverUrl}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: testEmail, password: testPassword })
+    });
+    
+    const loginStatus = loginRes.status;
+    const loginBody = await loginRes.json().catch(() => ({}));
+    const setCookies = loginRes.headers.getSetCookie();
+    console.log(`[Stage 3] Login Response Status: ${loginStatus}, Set-Cookie count: ${setCookies.length}, Body:`, loginBody);
+    console.log(`[Stage 3] Cookies set:`, setCookies);
+    
+    assert(
+      "Integration: Login Returns HTTP 200 with User Context",
+      loginStatus === 200 && (loginBody.user || loginBody.session)
+    );
+
+    const hasSessionCookie = setCookies.length > 0;
+    const containsSameSiteNoneAndSecure = setCookies.some(
+      (c) => c.toLowerCase().includes("samesite=none") && c.toLowerCase().includes("secure")
+    );
+    
+    assert(
+      "Integration: Cookie Contains SameSite=None and Secure Directives",
+      hasSessionCookie && containsSameSiteNoneAndSecure
+    );
+
+    // 4. Active Session Persistence Handshake Assertion
+    if (hasSessionCookie) {
+      const cookiesToAttach = setCookies.map((c) => c.split(";")[0]).join("; ");
+      console.log(`[Stage 4] Querying user profile via session handshake...`);
+      const meRes = await fetch(`${serverUrl}/api/auth/me`, {
+        method: "GET",
+        headers: {
+          Cookie: cookiesToAttach
+        }
+      });
+      
+      const meStatus = meRes.status;
+      const meBody = await meRes.json().catch(() => ({}));
+      console.log(`[Stage 4] Response Status: ${meStatus}, User Email:`, meBody?.user?.email);
+      
+      assert(
+        "Integration: Session Handshake returns Authenticated User (HTTP 200)",
+        meStatus === 200 && meBody?.user?.email === testEmail
+      );
+    } else {
+      assert("Integration: Session Handshake returns Authenticated User (HTTP 200)", false, "Skipped due to missing login cookies");
+    }
+
+  } catch (err: any) {
+    console.error("[Integration Test Pipeline] Error occurred:", err);
+    assert("Integration: Suite Executed with Zero Unhandled Pipeline Exceptions", false, err.message);
+  } finally {
+    // Teardown server
+    await new Promise<void>((resolve) => {
+      integrationServer.close(() => {
+        resolve();
+      });
+    });
+    console.log("[Integration Server] Teardown complete.");
+  }
 
   // Print summary
   console.log("\n==========================================================");

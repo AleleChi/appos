@@ -1,10 +1,12 @@
 {
-  "users": [],
-  "verification_tokens": [],
-  "password_reset_tokens": [],
-  "audit_logs": [],
+  "user": [],
+  "session": [],
+  "account": [],
+  "verification": [],
   "workspaces": [],
   "workspace_members": [],
   "applications": [],
-  "assets": []
+  "assets": [],
+  "auth_handoff_codes": [],
+  "audit_logs": []
 }

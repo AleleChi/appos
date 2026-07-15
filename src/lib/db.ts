@@ -12,35 +12,71 @@ import pg from "pg";
 
 export interface User {
   id: string;
+  name: string;
   email: string;
-  password_hash: string | null;
-  provider: string | null;
-  provider_id: string | null;
-  provider_email?: string | null;
-  email_verified?: boolean | null;
-  email_verified_at: string | null;
-  created_at: string;
-  updated_at: string;
-  last_login_at: string | null;
-  name?: string | null;
+  emailVerified: boolean;
+  email_verified?: boolean;
+  image: string | null;
   profile_image?: string | null;
-  email_verification_pending?: boolean | null;
+  createdAt: string;
+  created_at?: string;
+  updatedAt: string;
+  updated_at?: string;
 }
 
-export interface VerificationToken {
+export interface Session {
   id: string;
-  user_id: string;
-  token_hash: string;
-  expires_at: string;
-  used: boolean;
+  expiresAt: string;
+  expires_at?: string;
+  token: string;
+  createdAt: string;
+  created_at?: string;
+  updatedAt: string;
+  updated_at?: string;
+  ipAddress: string | null;
+  ip_address?: string | null;
+  userAgent: string | null;
+  user_agent?: string | null;
+  userId: string;
+  user_id?: string;
 }
 
-export interface PasswordResetToken {
+export interface Account {
   id: string;
-  user_id: string;
-  token_hash: string;
-  expires_at: string;
-  used: boolean;
+  accountId: string;
+  account_id?: string;
+  providerId: string;
+  provider_id?: string;
+  userId: string;
+  user_id?: string;
+  accessToken: string | null;
+  access_token?: string | null;
+  refreshToken: string | null;
+  refresh_token?: string | null;
+  idToken: string | null;
+  id_token?: string | null;
+  accessTokenExpiresAt: string | null;
+  access_token_expires_at?: string | null;
+  refreshTokenExpiresAt: string | null;
+  refresh_token_expires_at?: string | null;
+  scope: string | null;
+  password: string | null;
+  createdAt: string;
+  created_at?: string;
+  updatedAt: string;
+  updated_at?: string;
+}
+
+export interface Verification {
+  id: string;
+  identifier: string;
+  value: string;
+  expiresAt: string;
+  expires_at?: string;
+  createdAt: string | null;
+  created_at?: string | null;
+  updatedAt: string | null;
+  updated_at?: string | null;
 }
 
 export interface AuditLog {
@@ -99,52 +135,43 @@ export interface AuthHandoffCode {
   request_id: string;
 }
 
-export interface Session {
+export interface PasswordResetToken {
   id: string;
+  token_hash: string;
   user_id: string;
   expires_at: string;
-  created_at: string;
-}
-
-export interface OAuthTransaction {
-  id: string;
-  state_hash: string;
-  created_at: string;
-  expires_at: string;
-  consumed_at: string | null;
-  callback_started_at: string | null;
-  token_exchange_completed_at: string | null;
+  created_at?: string;
 }
 
 interface DatabaseSchema {
-  users: User[];
-  verification_tokens: VerificationToken[];
-  password_reset_tokens: PasswordResetToken[];
-  audit_logs: AuditLog[];
+  user: User[];
+  session: Session[];
+  account: Account[];
+  verification: Verification[];
   workspaces: Workspace[];
   workspace_members: WorkspaceMember[];
   applications: Application[];
   assets: Asset[];
   auth_handoff_codes?: AuthHandoffCode[];
-  sessions?: Session[];
-  oauth_transactions?: OAuthTransaction[];
+  password_reset_tokens?: PasswordResetToken[];
+  audit_logs: AuditLog[];
 }
 
 const DB_FILE_PATH = path.join(process.cwd(), "app_database.json");
 
 export class Database {
   private data: DatabaseSchema = {
-    users: [],
-    verification_tokens: [],
-    password_reset_tokens: [],
-    audit_logs: [],
+    user: [],
+    session: [],
+    account: [],
+    verification: [],
     workspaces: [],
     workspace_members: [],
     applications: [],
     assets: [],
     auth_handoff_codes: [],
-    sessions: [],
-    oauth_transactions: []
+    password_reset_tokens: [],
+    audit_logs: []
   };
 
   private pgPool: pg.Pool | null = null;
@@ -200,7 +227,15 @@ export class Database {
         });
         this.isPostgresActive = true;
         console.log("DATABASE_POOL_INITIALIZED=true");
-        this.bootstrapPostgres();
+        
+        // Non-blocking asynchronous background execution for database bootstrapping
+        Promise.resolve()
+          .then(async () => {
+            await this.bootstrapPostgres();
+          })
+          .catch((err) => {
+            console.error("Database background bootstrapping encountered an error:", err);
+          });
       } catch (err) {
         console.error("Database: Failed to initialize PG pool:", err);
         console.error("DATABASE_POOL_INITIALIZED=false");
@@ -252,76 +287,91 @@ export class Database {
         console.warn("Failed to retrieve DB metadata:", metaErr);
       }
       try {
+        // 1. "user" Table
         await client.query(`
-          CREATE TABLE IF NOT EXISTS users (
+          CREATE TABLE IF NOT EXISTS "user" (
             id VARCHAR(255) PRIMARY KEY,
-            email VARCHAR(255) UNIQUE NOT NULL,
-            normalized_email VARCHAR(255) UNIQUE,
-            password_hash VARCHAR(255),
-            provider VARCHAR(50) DEFAULT 'email',
-            auth_provider VARCHAR(50) DEFAULT 'email',
-            provider_id VARCHAR(255),
-            provider_email VARCHAR(255),
-            email_verified BOOLEAN DEFAULT FALSE,
-            email_verified_at VARCHAR(255),
-            status VARCHAR(50) DEFAULT 'active',
-            created_at VARCHAR(255) NOT NULL,
-            updated_at VARCHAR(255) NOT NULL,
-            last_login_at VARCHAR(255),
-            name VARCHAR(255),
-            profile_image TEXT
+            name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            email_verified BOOLEAN NOT NULL,
+            profile_image TEXT,
+            created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE NOT NULL
           );
         `);
-        try {
-          await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS provider VARCHAR(50) DEFAULT 'email';`);
-          await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(50) DEFAULT 'email';`);
-          await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS provider_id VARCHAR(255);`);
-          await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS provider_email VARCHAR(255);`);
-          await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;`);
-          await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at VARCHAR(255);`);
-          await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS normalized_email VARCHAR(255);`);
-          await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'active';`);
-          await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(255);`);
-          await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image TEXT;`);
-          await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at VARCHAR(255);`);
-          await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);`);
-          await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_pending BOOLEAN DEFAULT FALSE;`);
-          await client.query(`ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_user_email ON "user" (email);`);
 
-          // Backfill data for existing columns to maintain consistency
-          await client.query(`UPDATE users SET normalized_email = LOWER(email) WHERE normalized_email IS NULL;`);
-          await client.query(`UPDATE users SET auth_provider = provider WHERE auth_provider IS NULL AND provider IS NOT NULL;`);
-          await client.query(`UPDATE users SET status = 'active' WHERE status IS NULL;`);
+        // 2. "session" Table
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS "session" (
+            id VARCHAR(255) PRIMARY KEY,
+            expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            token TEXT UNIQUE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            ip_address TEXT,
+            user_agent TEXT,
+            user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE
+          );
+        `);
 
-          // Create index and constraints
-          await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_normalized_email ON users (normalized_email);`);
-          await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_auth_provider_provider_id ON users (auth_provider, provider_id) WHERE provider_id IS NOT NULL;`);
-          await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_provider_provider_id ON users (provider, provider_id) WHERE provider_id IS NOT NULL;`);
-          await client.query(`CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);`);
-        } catch (alterErr) {
-          console.warn("Database: Column/Index addition warning (may already exist):", alterErr);
-        }
+        // 3. "account" Table
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS "account" (
+            id VARCHAR(255) PRIMARY KEY,
+            account_id TEXT NOT NULL,
+            provider_id TEXT NOT NULL,
+            user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+            access_token TEXT,
+            refresh_token TEXT,
+            id_token TEXT,
+            access_token_expires_at TIMESTAMP WITH TIME ZONE,
+            refresh_token_expires_at TIMESTAMP WITH TIME ZONE,
+            scope TEXT,
+            password TEXT,
+            created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+          );
+        `);
+
+        // 4. "verification" Table
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS "verification" (
+            id VARCHAR(255) PRIMARY KEY,
+            identifier TEXT NOT NULL,
+            value TEXT NOT NULL,
+            expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE,
+            updated_at TIMESTAMP WITH TIME ZONE
+          );
+        `);
+
+        // 5. workspaces Table
         await client.query(`
           CREATE TABLE IF NOT EXISTS workspaces (
             id VARCHAR(255) PRIMARY KEY,
-            owner_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            owner_id VARCHAR(255) NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
             name VARCHAR(255) NOT NULL,
             industry VARCHAR(255),
             created_at VARCHAR(255) NOT NULL,
             updated_at VARCHAR(255) NOT NULL
           );
         `);
+
+        // 6. workspace_members Table
         await client.query(`
           CREATE TABLE IF NOT EXISTS workspace_members (
             id VARCHAR(255) PRIMARY KEY,
             workspace_id VARCHAR(255) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-            user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            user_id VARCHAR(255) NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
             role VARCHAR(50) NOT NULL DEFAULT 'member',
             created_at VARCHAR(255) NOT NULL,
             updated_at VARCHAR(255) NOT NULL,
             UNIQUE(workspace_id, user_id)
           );
         `);
+
+        // 7. applications Table
         await client.query(`
           CREATE TABLE IF NOT EXISTS applications (
             id VARCHAR(255) PRIMARY KEY,
@@ -333,6 +383,8 @@ export class Database {
             updated_at VARCHAR(255) NOT NULL
           );
         `);
+
+        // 8. assets Table
         await client.query(`
           CREATE TABLE IF NOT EXISTS assets (
             id VARCHAR(255) PRIMARY KEY,
@@ -342,26 +394,8 @@ export class Database {
             created_at VARCHAR(255) NOT NULL
           );
         `);
-        await client.query(`
-          CREATE TABLE IF NOT EXISTS verification_tokens (
-            id VARCHAR(255) PRIMARY KEY,
-            user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            token_hash VARCHAR(255) NOT NULL,
-            expires_at VARCHAR(255) NOT NULL,
-            used BOOLEAN DEFAULT FALSE,
-            created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
-          );
-        `);
-        await client.query(`
-          CREATE TABLE IF NOT EXISTS password_reset_tokens (
-            id VARCHAR(255) PRIMARY KEY,
-            user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            token_hash VARCHAR(255) NOT NULL,
-            expires_at VARCHAR(255) NOT NULL,
-            used BOOLEAN DEFAULT FALSE,
-            created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
-          );
-        `);
+
+        // 9. audit_logs Table
         await client.query(`
           CREATE TABLE IF NOT EXISTS audit_logs (
             id VARCHAR(255) PRIMARY KEY,
@@ -372,11 +406,13 @@ export class Database {
             created_at VARCHAR(255) NOT NULL
           );
         `);
+
+        // 10. auth_handoff_codes Table
         await client.query(`
           CREATE TABLE IF NOT EXISTS auth_handoff_codes (
             id VARCHAR(255) PRIMARY KEY,
             code_hash VARCHAR(255) NOT NULL,
-            user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            user_id VARCHAR(255) NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
             purpose VARCHAR(50) NOT NULL,
             expires_at VARCHAR(50) NOT NULL,
             used_at VARCHAR(50),
@@ -387,36 +423,29 @@ export class Database {
         await client.query(`
           CREATE INDEX IF NOT EXISTS idx_auth_handoff_codes_code_hash ON auth_handoff_codes (code_hash);
         `);
+
+        // 11. password_reset_tokens Table
         await client.query(`
-          CREATE TABLE IF NOT EXISTS sessions (
+          CREATE TABLE IF NOT EXISTS password_reset_tokens (
             id VARCHAR(255) PRIMARY KEY,
-            user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            expires_at VARCHAR(50) NOT NULL,
-            created_at VARCHAR(50) NOT NULL
+            token_hash VARCHAR(255) UNIQUE NOT NULL,
+            user_id VARCHAR(255) NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+            expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
           );
         `);
         await client.query(`
-          CREATE TABLE IF NOT EXISTS oauth_transactions (
-            id VARCHAR(255) PRIMARY KEY,
-            state_hash VARCHAR(255) UNIQUE NOT NULL,
-            created_at VARCHAR(50) NOT NULL,
-            expires_at VARCHAR(50) NOT NULL,
-            consumed_at VARCHAR(50),
-            callback_started_at VARCHAR(50),
-            token_exchange_completed_at VARCHAR(50)
-          );
+          CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token_hash ON password_reset_tokens (token_hash);
         `);
-        await client.query(`
-          CREATE INDEX IF NOT EXISTS idx_oauth_transactions_state_hash ON oauth_transactions (state_hash);
-        `);
+
         console.log("Database: PostgreSQL tables checked and bootstrapped successfully.");
         try {
           const checkUsersRes = await client.query(
-            "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users') as exists"
+            "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'user') as exists"
           );
           console.log(`DATABASE_USERS_TABLE_EXISTS=${checkUsersRes.rows[0].exists}`);
         } catch (checkErr) {
-          console.warn("Failed to check if users table exists:", checkErr);
+          console.warn("Failed to check if user table exists:", checkErr);
           console.log("DATABASE_USERS_TABLE_EXISTS=false");
         }
       } finally {
@@ -439,15 +468,17 @@ export class Database {
         const raw = fs.readFileSync(DB_FILE_PATH, "utf-8");
         this.data = JSON.parse(raw);
         // Ensure all required collections exist
-        if (!this.data.users) this.data.users = [];
-        if (!this.data.verification_tokens) this.data.verification_tokens = [];
-        if (!this.data.audit_logs) this.data.audit_logs = [];
+        if (!this.data.user) this.data.user = [];
+        if (!this.data.session) this.data.session = [];
+        if (!this.data.account) this.data.account = [];
+        if (!this.data.verification) this.data.verification = [];
         if (!this.data.workspaces) this.data.workspaces = [];
         if (!this.data.workspace_members) this.data.workspace_members = [];
         if (!this.data.applications) this.data.applications = [];
         if (!this.data.assets) this.data.assets = [];
-        if (!this.data.sessions) this.data.sessions = [];
-        if (!this.data.oauth_transactions) this.data.oauth_transactions = [];
+        if (!this.data.auth_handoff_codes) this.data.auth_handoff_codes = [];
+        if (!this.data.password_reset_tokens) this.data.password_reset_tokens = [];
+        if (!this.data.audit_logs) this.data.audit_logs = [];
       } else {
         this.saveJson();
       }
@@ -490,52 +521,22 @@ export class Database {
     // JSON fallback synchronous implementation
     const normalizedSql = sql.trim().replace(/\s+/g, " ").toLowerCase();
 
-    // 1. SELECT FROM USERS
-    if (normalizedSql.startsWith("select * from users")) {
+    // 1. SELECT FROM USER
+    if (normalizedSql.startsWith("select * from user") || normalizedSql.startsWith("select * from \"user\"")) {
       if (normalizedSql.includes("where email = ?") || normalizedSql.includes("where email = $1")) {
         const emailParam = String(params[0]).toLowerCase().trim();
-        const found = this.data.users.filter(u => u.email === emailParam);
+        const found = this.data.user.filter(u => u.email === emailParam);
         return found as unknown as T[];
       }
       if (normalizedSql.includes("where id = ?") || normalizedSql.includes("where id = $1")) {
         const idParam = String(params[0]);
-        const found = this.data.users.filter(u => u.id === idParam);
+        const found = this.data.user.filter(u => u.id === idParam);
         return found as unknown as T[];
       }
-      if (normalizedSql.includes("where provider_id = ?") || normalizedSql.includes("where provider_id = $1")) {
-        const provId = String(params[0]);
-        const found = this.data.users.filter(u => u.provider_id === provId);
-        return found as unknown as T[];
-      }
-      return this.data.users as unknown as T[];
+      return this.data.user as unknown as T[];
     }
 
-    // 2. SELECT FROM VERIFICATION TOKENS
-    if (normalizedSql.startsWith("select * from verification_tokens")) {
-      if (normalizedSql.includes("where token_hash = ?") || normalizedSql.includes("where token_hash = $1")) {
-        const hashParam = String(params[0]);
-        const found = this.data.verification_tokens.filter(t => t.token_hash === hashParam && !t.used);
-        return found as unknown as T[];
-      }
-      return this.data.verification_tokens as unknown as T[];
-    }
-
-    // 2b. SELECT FROM PASSWORD_RESET_TOKENS
-    if (normalizedSql.startsWith("select * from password_reset_tokens")) {
-      if (normalizedSql.includes("where token_hash = ?") || normalizedSql.includes("where token_hash = $1")) {
-        const hashParam = String(params[0]);
-        const found = this.data.password_reset_tokens.filter(t => t.token_hash === hashParam && !t.used);
-        return found as unknown as T[];
-      }
-      return this.data.password_reset_tokens as unknown as T[];
-    }
-
-    // 3. SELECT FROM AUDIT LOGS
-    if (normalizedSql.startsWith("select * from audit_logs")) {
-      return this.data.audit_logs as unknown as T[];
-    }
-
-    // 4. SELECT FROM WORKSPACES
+    // 2. SELECT FROM WORKSPACES
     if (normalizedSql.startsWith("select * from workspaces")) {
       if (normalizedSql.includes("where owner_id = ?") || normalizedSql.includes("where owner_id = $1")) {
         const ownerId = String(params[0]);
@@ -550,7 +551,7 @@ export class Database {
       return this.data.workspaces as unknown as T[];
     }
 
-    // 5. SELECT FROM APPLICATIONS
+    // 3. SELECT FROM APPLICATIONS
     if (normalizedSql.startsWith("select * from applications")) {
       if (normalizedSql.includes("where workspace_id = ?") || normalizedSql.includes("where workspace_id = $1")) {
         const wsId = String(params[0]);
@@ -565,7 +566,7 @@ export class Database {
       return this.data.applications as unknown as T[];
     }
 
-    // 6. SELECT FROM ASSETS
+    // 4. SELECT FROM ASSETS
     if (normalizedSql.startsWith("select * from assets")) {
       if (normalizedSql.includes("where application_id = ?") || normalizedSql.includes("where application_id = $1")) {
         const appId = String(params[0]);
@@ -575,7 +576,12 @@ export class Database {
       return this.data.assets as unknown as T[];
     }
 
-    // 7. SELECT FROM AUTH_HANDOFF_CODES
+    // 5. SELECT FROM AUDIT LOGS
+    if (normalizedSql.startsWith("select * from audit_logs")) {
+      return this.data.audit_logs as unknown as T[];
+    }
+
+    // 6. SELECT FROM AUTH_HANDOFF_CODES
     if (normalizedSql.startsWith("select * from auth_handoff_codes")) {
       if (normalizedSql.includes("where code_hash = ?") || normalizedSql.includes("where code_hash = $1")) {
         const hashParam = String(params[0]);
@@ -585,48 +591,34 @@ export class Database {
       return (this.data.auth_handoff_codes || []) as unknown as T[];
     }
 
-    if (normalizedSql.startsWith("select * from sessions")) {
+    // 7. SELECT FROM SESSION
+    if (normalizedSql.startsWith("select * from session") || normalizedSql.startsWith("select * from \"session\"")) {
       if (normalizedSql.includes("where id = ?") || normalizedSql.includes("where id = $1")) {
         const idParam = String(params[0]);
-        const found = (this.data.sessions || []).filter(s => s.id === idParam);
+        const found = (this.data.session || []).filter(s => s.id === idParam);
         return found as unknown as T[];
       }
-      return (this.data.sessions || []) as unknown as T[];
+      return (this.data.session || []) as unknown as T[];
     }
 
-    if (normalizedSql.startsWith("select * from oauth_transactions")) {
-      if (normalizedSql.includes("where state_hash = ?") || normalizedSql.includes("where state_hash = $1")) {
+    // 8. SELECT FROM ACCOUNT
+    if (normalizedSql.startsWith("select * from account") || normalizedSql.startsWith("select * from \"account\"")) {
+      return (this.data.account || []) as unknown as T[];
+    }
+
+    // 9. SELECT FROM VERIFICATION
+    if (normalizedSql.startsWith("select * from verification") || normalizedSql.startsWith("select * from \"verification\"")) {
+      return (this.data.verification || []) as unknown as T[];
+    }
+
+    // 10. SELECT FROM PASSWORD_RESET_TOKENS
+    if (normalizedSql.startsWith("select * from password_reset_tokens")) {
+      if (normalizedSql.includes("where token_hash = ?") || normalizedSql.includes("where token_hash = $1")) {
         const hashParam = String(params[0]);
-        const found = (this.data.oauth_transactions || []).filter(t => t.state_hash === hashParam);
+        const found = (this.data.password_reset_tokens || []).filter(c => c.token_hash === hashParam);
         return found as unknown as T[];
       }
-      return (this.data.oauth_transactions || []) as unknown as T[];
-    }
-
-    if (normalizedSql.startsWith("update oauth_transactions")) {
-      if (normalizedSql.includes("set callback_started_at = ?") || normalizedSql.includes("set callback_started_at = $1")) {
-        const [callbackStartedAt, stateHash, expiresAtLimit] = params;
-        const tx = (this.data.oauth_transactions || []).find(
-          t => t.state_hash === stateHash && t.callback_started_at === null && t.expires_at > expiresAtLimit
-        );
-        if (tx) {
-          tx.callback_started_at = callbackStartedAt;
-          this.saveJson();
-          return [{ id: tx.id }] as unknown as T[];
-        }
-        return [] as unknown as T[];
-      }
-      if (normalizedSql.includes("set token_exchange_completed_at = ?") || normalizedSql.includes("set token_exchange_completed_at = $1")) {
-        const [tokenExchangeCompletedAt, consumedAt, stateHash] = params;
-        const tx = (this.data.oauth_transactions || []).find(t => t.state_hash === stateHash);
-        if (tx) {
-          tx.token_exchange_completed_at = tokenExchangeCompletedAt;
-          tx.consumed_at = consumedAt;
-          this.saveJson();
-          return [{ id: tx.id }] as unknown as T[];
-        }
-        return [] as unknown as T[];
-      }
+      return (this.data.password_reset_tokens || []) as unknown as T[];
     }
 
     return [];
@@ -644,184 +636,86 @@ export class Database {
     // JSON fallback synchronous implementation
     const normalizedSql = sql.trim().replace(/\s+/g, " ").toLowerCase();
 
-    // 1. INSERT INTO USERS
-    if (normalizedSql.startsWith("insert into users")) {
-      const email = params[1];
+    // 1. INSERT INTO USER
+    if (normalizedSql.startsWith("insert into user") || normalizedSql.startsWith("insert into \"user\"")) {
+      const email = params[2];
       const emailLower = String(email).toLowerCase().trim();
-      const exists = this.data.users.some(u => u.email === emailLower);
+      const exists = this.data.user.some(u => u.email === emailLower);
       if (exists) {
-        throw new Error("UNIQUE constraint failed: users.email");
+        throw new Error("UNIQUE constraint failed: user.email");
       }
 
-      let newUser: User;
-      if (params.length === 13) {
-        const [id, emailVal, password_hash, provider, provider_id, provider_email, email_verified, email_verified_at, created_at, updated_at, last_login_at, name, profile_image] = params;
-        newUser = {
-          id: String(id),
-          email: emailLower,
-          password_hash: password_hash ? String(password_hash) : null,
-          provider: provider ? String(provider) : "email",
-          provider_id: provider_id ? String(provider_id) : null,
-          provider_email: provider_email ? String(provider_email) : null,
-          email_verified: email_verified !== undefined ? !!email_verified : null,
-          email_verified_at: email_verified_at || null,
-          created_at: String(created_at),
-          updated_at: String(updated_at),
-          last_login_at: last_login_at || null,
-          name: name ? String(name) : null,
-          profile_image: profile_image ? String(profile_image) : null
-        };
-      } else if (params.length === 11) {
-        const [id, emailVal, password_hash, provider, provider_id, email_verified_at, created_at, updated_at, last_login_at, name, profile_image] = params;
-        newUser = {
-          id: String(id),
-          email: emailLower,
-          password_hash: password_hash ? String(password_hash) : null,
-          provider: provider ? String(provider) : "email",
-          provider_id: provider_id ? String(provider_id) : null,
-          email_verified_at: email_verified_at || null,
-          created_at: String(created_at),
-          updated_at: String(updated_at),
-          last_login_at: last_login_at || null,
-          name: name ? String(name) : null,
-          profile_image: profile_image ? String(profile_image) : null
-        };
-      } else if (params.length === 9) {
-        const [id, emailVal, password_hash, provider, provider_id, email_verified_at, created_at, updated_at, last_login_at] = params;
-        newUser = {
-          id: String(id),
-          email: emailLower,
-          password_hash: password_hash ? String(password_hash) : null,
-          provider: provider ? String(provider) : "email",
-          provider_id: provider_id ? String(provider_id) : null,
-          email_verified_at: email_verified_at || null,
-          created_at: String(created_at),
-          updated_at: String(updated_at),
-          last_login_at: last_login_at || null,
-          name: null,
-          profile_image: null
-        };
-      } else {
-        const [id, emailVal, password_hash, email_verified_at, created_at, updated_at, last_login_at] = params;
-        newUser = {
-          id: String(id),
-          email: emailLower,
-          password_hash: password_hash ? String(password_hash) : null,
-          provider: "email",
-          provider_id: null,
-          email_verified_at: email_verified_at || null,
-          created_at: String(created_at),
-          updated_at: String(updated_at),
-          last_login_at: last_login_at || null,
-          name: null,
-          profile_image: null
-        };
-      }
-
-      this.data.users.push(newUser);
-      this.saveJson();
-      return;
-    }
-
-    // 2. UPDATE USERS
-    if (normalizedSql.startsWith("update users")) {
-      if (normalizedSql.includes("set email_verified_at = ?") && normalizedSql.includes("where id = ?")) {
-        const [emailVerifiedAt, id] = params;
-        const user = this.data.users.find(u => u.id === id);
-        if (user) {
-          user.email_verified_at = emailVerifiedAt;
-          user.updated_at = new Date().toISOString();
-          this.saveJson();
-        }
-        return;
-      }
-      if (normalizedSql.includes("set last_login_at = ?") && normalizedSql.includes("where id = ?")) {
-        const [lastLoginAt, id] = params;
-        const user = this.data.users.find(u => u.id === id);
-        if (user) {
-          user.last_login_at = lastLoginAt;
-          user.updated_at = new Date().toISOString();
-          this.saveJson();
-        }
-        return;
-      }
-      if (normalizedSql.includes("set password_hash = ?") && normalizedSql.includes("where id = ?")) {
-        const [passwordHash, id] = params;
-        const user = this.data.users.find(u => u.id === id);
-        if (user) {
-          user.password_hash = passwordHash;
-          user.updated_at = new Date().toISOString();
-          this.saveJson();
-        }
-        return;
-      }
-      if (normalizedSql.includes("set provider = ?") && normalizedSql.includes("where id = ?")) {
-        const [provider, provider_id, id] = params;
-        const user = this.data.users.find(u => u.id === id);
-        if (user) {
-          user.provider = provider;
-          user.provider_id = provider_id;
-          user.updated_at = new Date().toISOString();
-          this.saveJson();
-        }
-        return;
-      }
-    }
-
-    // 3. INSERT INTO VERIFICATION_TOKENS
-    if (normalizedSql.startsWith("insert into verification_tokens")) {
-      const [id, user_id, token_hash, expires_at, used] = params;
-      const newToken: VerificationToken = {
+      const [id, name, emailVal, emailVerified, image, createdAt, updatedAt] = params;
+      const newUser: User = {
         id: String(id),
-        user_id: String(user_id),
-        token_hash: String(token_hash),
-        expires_at: String(expires_at),
-        used: !!used
+        name: String(name),
+        email: emailLower,
+        emailVerified: !!emailVerified,
+        image: image ? String(image) : null,
+        createdAt: String(createdAt),
+        updatedAt: String(updatedAt)
       };
-      this.data.verification_tokens.push(newToken);
+
+      this.data.user.push(newUser);
       this.saveJson();
       return;
     }
 
-    // 4. UPDATE VERIFICATION_TOKENS
-    if (normalizedSql.startsWith("update verification_tokens")) {
-      if (normalizedSql.includes("set used = ?") && normalizedSql.includes("where id = ?")) {
-        const [used, id] = params;
-        const token = this.data.verification_tokens.find(t => t.id === id);
-        if (token) {
-          token.used = !!used;
-          this.saveJson();
-        }
-        return;
-      }
-    }
-
-    // 4b. INSERT INTO PASSWORD_RESET_TOKENS
-    if (normalizedSql.startsWith("insert into password_reset_tokens")) {
-      const [id, user_id, token_hash, expires_at, used] = params;
-      const newToken: PasswordResetToken = {
+    // 2. INSERT INTO SESSION
+    if (normalizedSql.startsWith("insert into session") || normalizedSql.startsWith("insert into \"session\"")) {
+      const [id, expiresAt, token, createdAt, updatedAt, ipAddress, userAgent, userId] = params;
+      const newSession: Session = {
         id: String(id),
-        user_id: String(user_id),
-        token_hash: String(token_hash),
-        expires_at: String(expires_at),
-        used: !!used
+        expiresAt: String(expiresAt),
+        token: String(token),
+        createdAt: String(createdAt),
+        updatedAt: String(updatedAt),
+        ipAddress: ipAddress ? String(ipAddress) : null,
+        userAgent: userAgent ? String(userAgent) : null,
+        userId: String(userId)
       };
-      this.data.password_reset_tokens.push(newToken);
+      this.data.session.push(newSession);
       this.saveJson();
       return;
     }
 
-    // 4c. UPDATE PASSWORD_RESET_TOKENS
-    if (normalizedSql.startsWith("update password_reset_tokens")) {
-      if (normalizedSql.includes("set used = ?") && normalizedSql.includes("where id = ?")) {
-        const [used, id] = params;
-        const token = this.data.password_reset_tokens.find(t => t.id === id);
-        if (token) {
-          token.used = !!used;
-          this.saveJson();
-        }
-        return;
-      }
+    // 3. INSERT INTO ACCOUNT
+    if (normalizedSql.startsWith("insert into account") || normalizedSql.startsWith("insert into \"account\"")) {
+      const [id, accountId, providerId, userId, accessToken, refreshToken, idToken, accessTokenExpiresAt, refreshTokenExpiresAt, scope, password, createdAt, updatedAt] = params;
+      const newAccount: Account = {
+        id: String(id),
+        accountId: String(accountId),
+        providerId: String(providerId),
+        userId: String(userId),
+        accessToken: accessToken ? String(accessToken) : null,
+        refreshToken: refreshToken ? String(refreshToken) : null,
+        idToken: idToken ? String(idToken) : null,
+        accessTokenExpiresAt: accessTokenExpiresAt ? String(accessTokenExpiresAt) : null,
+        refreshTokenExpiresAt: refreshTokenExpiresAt ? String(refreshTokenExpiresAt) : null,
+        scope: scope ? String(scope) : null,
+        password: password ? String(password) : null,
+        createdAt: String(createdAt),
+        updatedAt: String(updatedAt)
+      };
+      this.data.account.push(newAccount);
+      this.saveJson();
+      return;
+    }
+
+    // 4. INSERT INTO VERIFICATION
+    if (normalizedSql.startsWith("insert into verification") || normalizedSql.startsWith("insert into \"verification\"")) {
+      const [id, identifier, value, expiresAt, createdAt, updatedAt] = params;
+      const newVerification: Verification = {
+        id: String(id),
+        identifier: String(identifier),
+        value: String(value),
+        expiresAt: String(expiresAt),
+        createdAt: createdAt ? String(createdAt) : null,
+        updatedAt: updatedAt ? String(updatedAt) : null
+      };
+      this.data.verification.push(newVerification);
+      this.saveJson();
+      return;
     }
 
     // 5. INSERT INTO AUDIT_LOGS
@@ -936,47 +830,28 @@ export class Database {
       }
     }
 
-    // 12. INSERT INTO SESSIONS
-    if (normalizedSql.startsWith("insert into sessions")) {
-      const [id, user_id, expires_at, created_at] = params;
-      const newSession = {
-        id: String(id),
-        user_id: String(user_id),
-        expires_at: String(expires_at),
-        created_at: String(created_at)
-      };
-      if (!this.data.sessions) this.data.sessions = [];
-      this.data.sessions.push(newSession);
-      this.saveJson();
-      return;
-    }
-
-    // 13. DELETE FROM SESSIONS
-    if (normalizedSql.startsWith("delete from sessions")) {
+    // 12. DELETE FROM SESSION
+    if (normalizedSql.startsWith("delete from session") || normalizedSql.startsWith("delete from \"session\"")) {
       if (normalizedSql.includes("where id = ?") || normalizedSql.includes("where id = $1")) {
         const idParam = String(params[0]);
-        if (this.data.sessions) {
-          this.data.sessions = this.data.sessions.filter(s => s.id !== idParam);
-          this.saveJson();
-        }
+        this.data.session = this.data.session.filter(s => s.id !== idParam);
+        this.saveJson();
       }
       return;
     }
 
-    // 14. INSERT INTO OAUTH_TRANSACTIONS
-    if (normalizedSql.startsWith("insert into oauth_transactions")) {
-      const [id, state_hash, created_at, expires_at] = params;
-      const newTx = {
+    // 13. INSERT INTO PASSWORD_RESET_TOKENS
+    if (normalizedSql.startsWith("insert into password_reset_tokens")) {
+      const [id, token_hash, user_id, expires_at, created_at] = params;
+      const newToken: PasswordResetToken = {
         id: String(id),
-        state_hash: String(state_hash),
-        created_at: String(created_at),
+        token_hash: String(token_hash),
+        user_id: String(user_id),
         expires_at: String(expires_at),
-        consumed_at: null,
-        callback_started_at: null,
-        token_exchange_completed_at: null
+        created_at: created_at ? String(created_at) : new Date().toISOString()
       };
-      if (!this.data.oauth_transactions) this.data.oauth_transactions = [];
-      this.data.oauth_transactions.push(newTx);
+      if (!this.data.password_reset_tokens) this.data.password_reset_tokens = [];
+      this.data.password_reset_tokens.push(newToken);
       this.saveJson();
       return;
     }
@@ -989,19 +864,22 @@ export class Database {
     if (this.isPostgresActive && this.pgPool) {
       // In PostgreSQL mode, truncate tables safely
       this.pgPool.query(`
-        TRUNCATE TABLE audit_logs, verification_tokens, password_reset_tokens, assets, applications, workspace_members, workspaces, users CASCADE;
+        TRUNCATE TABLE audit_logs, assets, applications, workspace_members, workspaces, "session", "account", "verification", "user", auth_handoff_codes, password_reset_tokens CASCADE;
       `).catch(err => console.error("Database: Failed to truncate PostgreSQL tables:", err));
       return;
     }
     this.data = {
-      users: [],
-      verification_tokens: [],
-      password_reset_tokens: [],
-      audit_logs: [],
+      user: [],
+      session: [],
+      account: [],
+      verification: [],
       workspaces: [],
       workspace_members: [],
       applications: [],
-      assets: []
+      assets: [],
+      auth_handoff_codes: [],
+      password_reset_tokens: [],
+      audit_logs: []
     };
     this.saveJson();
   }
@@ -1037,7 +915,6 @@ export class Database {
       };
     } catch (err: any) {
       console.error("Database connection check failed:", err);
-      // Generate a stable safe reference ID
       const refId = `DB-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
       return { status: "degraded", database: "unreachable", reference: refId };
     }

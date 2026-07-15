@@ -11,6 +11,132 @@ import {
 } from "./AuthComponents";
 import { authService } from "../lib/authService";
 import { authClient } from "../lib/auth-client";
+import { cn } from "../lib/utils";
+
+// Translate technical database/server errors to elegant, actionable human language
+const translateError = (err: any): string => {
+  if (!err) return "An unexpected error occurred. Please try again.";
+  
+  const message = typeof err === "string" ? err : err.message || "";
+  const lower = message.toLowerCase();
+  
+  if (
+    lower.includes("cors") ||
+    lower.includes("network") ||
+    lower.includes("fetch") ||
+    lower.includes("socket") ||
+    lower.includes("failed to fetch") ||
+    lower.includes("connect")
+  ) {
+    return "We couldn't connect securely. Please verify your connection and try again.";
+  }
+  
+  if (
+    lower.includes("invalid combination") ||
+    lower.includes("user matching error") ||
+    lower.includes("invalid_credentials") ||
+    lower.includes("invalid credentials") ||
+    lower.includes("incorrect password") ||
+    lower.includes("invalid email or password") ||
+    lower.includes("authentication failed") ||
+    lower.includes("invalid email") ||
+    lower.includes("credential")
+  ) {
+    return "The email or password you entered is incorrect.";
+  }
+  
+  if (
+    lower.includes("sql unique") ||
+    lower.includes("unique index") ||
+    lower.includes("already exists") ||
+    lower.includes("user_already_exists") ||
+    lower.includes("email_already_in_use") ||
+    lower.includes("already in use") ||
+    lower.includes("email already")
+  ) {
+    return "An account with this email address already exists.";
+  }
+  
+  return message || "An unexpected error occurred. Please try again.";
+};
+
+// Rate-limiting resend verification email countdown component
+function SignupVerificationActions({
+  email,
+  onResend,
+  onSignIn
+}: {
+  email: string;
+  onResend: () => Promise<void>;
+  onSignIn: () => void;
+}) {
+  const [countdown, setCountdown] = useState(0);
+  const [resending, setResending] = useState(false);
+  const [statusText, setStatusText] = useState("");
+
+  useEffect(() => {
+    let timer: any;
+    if (countdown > 0) {
+      timer = setInterval(() => {
+        setCountdown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [countdown]);
+
+  const handleResendClick = async () => {
+    if (countdown > 0 || resending) return;
+    setResending(true);
+    setStatusText("");
+    try {
+      await onResend();
+      setCountdown(60);
+      setStatusText("Verification link sent.");
+    } catch (err) {
+      setStatusText("Failed to resend. Please try again.");
+    } finally {
+      setResending(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-3 w-full">
+      <div className="flex items-center gap-1.5 text-slate-500 font-bold mb-2">
+        <span className="h-2.5 w-2.5 rounded-full bg-indigo-500 animate-pulse" />
+        <span>What if I didn't get it?</span>
+      </div>
+      <div className="flex gap-4 w-full">
+        <button
+          type="button"
+          disabled={countdown > 0 || resending}
+          onClick={handleResendClick}
+          className={cn(
+            "flex-1 rounded-lg border py-2.5 text-center text-xs font-bold transition-all cursor-pointer min-h-[44px]",
+            countdown > 0
+              ? "bg-slate-50 text-slate-400 border-slate-100 cursor-not-allowed"
+              : "border-slate-200 text-slate-700 hover:bg-slate-50"
+          )}
+        >
+          {countdown > 0 ? `Resend in ${countdown}s` : resending ? "Sending..." : "Resend verification link"}
+        </button>
+        <button
+          type="button"
+          onClick={onSignIn}
+          className="flex-1 rounded-lg bg-indigo-600 text-white py-2.5 text-center text-xs font-bold hover:bg-indigo-700 transition-all cursor-pointer min-h-[44px]"
+        >
+          Sign In
+        </button>
+      </div>
+      {statusText && (
+        <p className="text-[11px] font-medium text-indigo-600 mt-1 select-none animate-fade-in">
+          {statusText}
+        </p>
+      )}
+    </div>
+  );
+}
 
 interface SignupPageProps {
   onBackToHome?: () => void;
@@ -118,6 +244,20 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
     }
   }, []);
 
+  // Automatic redirect back to login after forgot-password success state
+  useEffect(() => {
+    if (isSuccess && mode === "forgot-password") {
+      const timer = setTimeout(() => {
+        setIsSuccess(false);
+        setMode("login");
+        setEmail("");
+        setPassword("");
+        setErrors({});
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [isSuccess, mode]);
+
 
 
   // Input changes
@@ -148,10 +288,10 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
           setIsSuccess(true);
           setSuccessMsg(response.message);
         } else {
-          setErrors({ general: response.message });
+          setErrors({ general: translateError(response.message) });
         }
       } catch (err) {
-        setErrors({ general: "Unable to dispatch reset link." });
+        setErrors({ general: translateError(err) });
       } finally {
         setIsLoading(false);
       }
@@ -170,10 +310,10 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
           setIsSuccess(true);
           setSuccessMsg(response.message);
         } else {
-          setErrors({ general: response.message });
+          setErrors({ general: translateError(response.message) });
         }
       } catch (err) {
-        setErrors({ general: "Unable to complete password reset." });
+        setErrors({ general: translateError(err) });
       } finally {
         setIsLoading(false);
       }
@@ -204,10 +344,10 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
             }, 1800);
           }
         } else {
-          setErrors({ general: response.message });
+          setErrors({ general: translateError(response.message) });
         }
       } catch (err) {
-        setErrors({ general: "Account linking handshake failed." });
+        setErrors({ general: translateError(err) });
       } finally {
         setIsLoading(false);
       }
@@ -258,7 +398,7 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
             }, 1500);
           }
         } else {
-          setErrors({ general: response.message });
+          setErrors({ general: translateError(response.message) });
         }
       } else {
         const response = await authService.signup({
@@ -272,11 +412,11 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
           setIsSuccess(true);
           setSuccessMsg(response.message);
         } else {
-          setErrors({ general: response.message });
+          setErrors({ general: translateError(response.message) });
         }
       }
     } catch (err) {
-      setErrors({ general: "An unexpected network error occurred." });
+      setErrors({ general: translateError(err) });
     } finally {
       setIsLoading(false);
     }
@@ -326,9 +466,9 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
     setErrors({});
     try {
       const res = await authService.resendVerification(email);
-      setErrors({ general: res.message });
+      setErrors({ general: translateError(res.message) });
     } catch (err) {
-      setErrors({ general: "Resend verification request failed." });
+      setErrors({ general: translateError(err) });
     } finally {
       setIsLoading(false);
     }
@@ -586,67 +726,80 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
         </div>
       ) : (
         /* SUCCESS SCREEN */
-        <div className="flex flex-col items-center justify-center text-center py-6 select-none animate-fade-in">
+        <div className="flex flex-col items-center justify-center text-center py-6 select-none animate-fade-in w-full">
           <div className="h-16 w-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-6 border border-emerald-100 shadow-sm">
             <CheckCircle2 className="h-9 w-9 stroke-[2.2]" />
           </div>
           
-          <h3 className="font-display text-2xl font-extrabold text-brand-dark mb-3">
+          <h3 className="font-display text-2.5xl font-extrabold text-brand-dark mb-3">
             {mode === "login" && "Authentication Successful"}
-            {mode === "signup" && "Account Created!"}
-            {mode === "forgot-password" && "Reset Link Sent"}
-            {mode === "reset-password" && "Password Reset Successful"}
+            {mode === "signup" && "Verify your email"}
+            {mode === "forgot-password" && "Reset link sent"}
+            {mode === "reset-password" && "Password changed"}
             {mode === "link-conflict" && "Linking Complete!"}
           </h3>
           
           <p className="text-sm text-brand-text-secondary leading-relaxed max-w-sm mb-8">
-            {successMsg || "Your request has been successfully processed under strict tenant verification standards."}
+            {mode === "forgot-password" && "We sent a secure link to your inbox. Click the link to create a new password."}
+            {mode === "signup" && "We sent an activation link to your email address. Please click the link to confirm your account and open your workspace."}
+            {mode === "reset-password" && "Your new password is now active. You can now securely access your AppOS console."}
+            {mode !== "forgot-password" && mode !== "signup" && mode !== "reset-password" && (successMsg || "Your request has been successfully processed.")}
           </p>
 
-          <div className="w-full bg-[#F8FAFC] border border-slate-200/80 rounded-xl p-5 mb-8 text-left">
-            <div className="flex items-start gap-3">
-              <ShieldCheck className="h-5 w-5 text-brand-primary shrink-0 mt-0.5" />
-              <div>
-                <h4 className="text-xs font-extrabold text-brand-dark">Security Handshake Succeeded</h4>
-                <p className="text-[11px] text-brand-text-secondary leading-normal mt-1">
-                  Tenant credentials and cryptographic validation signatures matched security protocols.
-                </p>
+          {/* Secure Informational Card or Custom Warnings */}
+          {mode !== "forgot-password" && mode !== "signup" && mode !== "reset-password" ? (
+            <div className="w-full bg-[#F8FAFC] border border-slate-200/80 rounded-xl p-5 mb-8 text-left">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="h-5 w-5 text-brand-primary shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-xs font-extrabold text-brand-dark font-sans">Security Verified</h4>
+                  <p className="text-[11px] text-brand-text-secondary leading-normal mt-1">
+                    Your login has been securely verified.
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            (mode === "forgot-password" || mode === "reset-password" || mode === "signup") && (
+              <div className="w-full bg-[#F8FAFC] border border-slate-200/80 rounded-xl p-4 mb-8 text-center">
+                <p className="text-xs font-medium text-slate-500">
+                  For your security, this link expires in 24 hours.
+                </p>
+              </div>
+            )
+          )}
 
           <div className="flex flex-col items-center gap-2 text-xs font-semibold text-slate-500 w-full">
             {mode === "signup" ? (
-              <div className="flex flex-col items-center gap-3 w-full">
-                <div className="flex items-center gap-1.5 text-amber-500 font-bold mb-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse" />
-                  <span>Pending verification...</span>
-                </div>
-                <div className="flex gap-4 w-full">
-                  <button
-                    onClick={handleResendVerification}
-                    className="flex-1 rounded-lg border border-slate-200 py-2.5 text-center text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
-                  >
-                    Resend Email Link
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsSuccess(false);
-                      setMode("login");
-                      setEmail("");
-                      setPassword("");
-                      setErrors({});
-                    }}
-                    className="flex-1 rounded-lg bg-indigo-600 text-white py-2.5 text-center text-xs font-bold hover:bg-indigo-700 transition-colors cursor-pointer"
-                  >
-                    Sign In
-                  </button>
-                </div>
+              <SignupVerificationActions
+                email={email}
+                onResend={handleResendVerification}
+                onSignIn={() => {
+                  setIsSuccess(false);
+                  setMode("login");
+                  setEmail("");
+                  setPassword("");
+                  setErrors({});
+                }}
+              />
+            ) : mode === "reset-password" ? (
+              <div className="w-full">
+                <PrimaryButton onClick={() => {
+                  setIsSuccess(false);
+                  setMode("login");
+                  setEmail("");
+                  setPassword("");
+                  setErrors({});
+                }}>
+                  Go to Dashboard
+                </PrimaryButton>
               </div>
             ) : (
               <div className="flex items-center gap-1.5 text-brand-primary">
                 <span className="h-2 w-2 rounded-full bg-brand-primary animate-pulse" />
-                <span>Redirecting to your environment...</span>
+                <span>
+                  {mode === "forgot-password" ? "Returning to login..." : "Taking you to your account..."}
+                </span>
               </div>
             )}
           </div>
