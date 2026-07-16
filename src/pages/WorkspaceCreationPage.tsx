@@ -74,7 +74,7 @@ export default function WorkspaceCreationPage({ onWorkspaceCreated, onBackToHome
 
     try {
       // 1. Header-Based Token Extraction to securely bypass browser sandbox iframe cookie blocking
-      const sessionToken = localStorage.getItem("better-auth.session_token") || "";
+      const sessionToken = localStorage.getItem("bearer_token") || "";
       const targetUrl = getApiUrl("/api/workspaces");
 
       const response = await fetch(targetUrl, {

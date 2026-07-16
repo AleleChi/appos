@@ -140,10 +140,10 @@ ERROR MESSAGE: ${err.message || String(err)}`);
    */
   async forgotPassword(email: string): Promise<AuthResponse> {
     try {
-      const originUrl = typeof window !== "undefined" ? window.location.origin : "https://appos-ten.vercel.app";
       const { error } = await (authClient as any).forgetPassword({
         email,
-        redirectTo: `${originUrl}/reset-password`
+        // Force absolute path mapping to ensure redirect lands on the client instead of Render
+        redirectTo: window.location.origin + "/reset-password",
       });
 
       if (error) {

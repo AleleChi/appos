@@ -20,7 +20,7 @@ export default function WorkspaceGuard({ user, onNavigate, children }: Workspace
       }
 
       try {
-        const sessionToken = localStorage.getItem("better-auth.session_token") || "";
+        const sessionToken = localStorage.getItem("bearer_token") || "";
         const targetUrl = getApiUrl("/api/auth/status");
 
         const response = await fetch(targetUrl, {
