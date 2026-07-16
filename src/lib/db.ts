@@ -226,8 +226,8 @@ export class Database {
           connectionString: dbUrl,
           ssl: sslEnabled ? { rejectUnauthorized: false } : false,
           max: 10,
-          idleTimeoutMillis: 30000,
-          connectionTimeoutMillis: 30000,
+          idleTimeoutMillis: 10000, // keep idle timeout low to avoid stale serverless connections
+          connectionTimeoutMillis: 10000,
         });
         
         // Register an error event listener to catch background idle client exceptions safely
@@ -303,63 +303,119 @@ export class Database {
             id VARCHAR(255) PRIMARY KEY,
             name TEXT NOT NULL,
             email TEXT UNIQUE NOT NULL,
-            email_verified BOOLEAN NOT NULL,
+            email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+            "emailVerified" BOOLEAN NOT NULL DEFAULT FALSE,
             profile_image TEXT,
-            created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-            updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+            image TEXT,
+            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
           );
         `);
         await client.query(`CREATE INDEX IF NOT EXISTS idx_user_email ON "user" (email);`);
+
+        // Ensure camelCase columns exist on existing "user" table
+        await client.query('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "emailVerified" BOOLEAN DEFAULT FALSE;');
+        await client.query('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "image" TEXT;');
+        await client.query('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;');
+        await client.query('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;');
 
         // 2. "session" Table
         await client.query(`
           CREATE TABLE IF NOT EXISTS "session" (
             id VARCHAR(255) PRIMARY KEY,
-            expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            expires_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "expiresAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
             token TEXT UNIQUE NOT NULL,
-            created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-            updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
             ip_address TEXT,
+            "ipAddress" TEXT,
             user_agent TEXT,
-            user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE
+            "userAgent" TEXT,
+            user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+            "userId" TEXT REFERENCES "user"(id) ON DELETE CASCADE
           );
         `);
+
+        // Ensure camelCase columns exist on existing "session" table
+        await client.query('ALTER TABLE "session" ADD COLUMN IF NOT EXISTS "expiresAt" TIMESTAMP WITH TIME ZONE;');
+        await client.query('ALTER TABLE "session" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;');
+        await client.query('ALTER TABLE "session" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;');
+        await client.query('ALTER TABLE "session" ADD COLUMN IF NOT EXISTS "ipAddress" TEXT;');
+        await client.query('ALTER TABLE "session" ADD COLUMN IF NOT EXISTS "userAgent" TEXT;');
+        await client.query('ALTER TABLE "session" ADD COLUMN IF NOT EXISTS "userId" TEXT REFERENCES "user"(id) ON DELETE CASCADE;');
 
         // 3. "account" Table
         await client.query(`
           CREATE TABLE IF NOT EXISTS "account" (
             id VARCHAR(255) PRIMARY KEY,
             account_id TEXT NOT NULL,
+            "accountId" TEXT,
             provider_id TEXT NOT NULL,
+            "providerId" TEXT,
             user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+            "userId" TEXT REFERENCES "user"(id) ON DELETE CASCADE,
             access_token TEXT,
+            "accessToken" TEXT,
             refresh_token TEXT,
+            "refreshToken" TEXT,
             id_token TEXT,
+            "idToken" TEXT,
             access_token_expires_at TIMESTAMP WITH TIME ZONE,
+            "accessTokenExpiresAt" TIMESTAMP WITH TIME ZONE,
             refresh_token_expires_at TIMESTAMP WITH TIME ZONE,
+            "refreshTokenExpiresAt" TIMESTAMP WITH TIME ZONE,
             scope TEXT,
             password TEXT,
-            created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-            updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
           );
         `);
+
+        // Ensure camelCase columns exist on existing "account" table
+        await client.query('ALTER TABLE "account" ADD COLUMN IF NOT EXISTS "accountId" TEXT;');
+        await client.query('ALTER TABLE "account" ADD COLUMN IF NOT EXISTS "providerId" TEXT;');
+        await client.query('ALTER TABLE "account" ADD COLUMN IF NOT EXISTS "userId" TEXT REFERENCES "user"(id) ON DELETE CASCADE;');
+        await client.query('ALTER TABLE "account" ADD COLUMN IF NOT EXISTS "accessToken" TEXT;');
+        await client.query('ALTER TABLE "account" ADD COLUMN IF NOT EXISTS "refreshToken" TEXT;');
+        await client.query('ALTER TABLE "account" ADD COLUMN IF NOT EXISTS "idToken" TEXT;');
+        await client.query('ALTER TABLE "account" ADD COLUMN IF NOT EXISTS "accessTokenExpiresAt" TIMESTAMP WITH TIME ZONE;');
+        await client.query('ALTER TABLE "account" ADD COLUMN IF NOT EXISTS "refreshTokenExpiresAt" TIMESTAMP WITH TIME ZONE;');
+        await client.query('ALTER TABLE "account" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;');
+        await client.query('ALTER TABLE "account" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;');
 
         // Canonical "accounts" Table for Google OAuth
         await client.query(`
           CREATE TABLE IF NOT EXISTS accounts (
             id VARCHAR(255) PRIMARY KEY,
             user_id VARCHAR(255) NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+            "userId" VARCHAR(255) REFERENCES "user"(id) ON DELETE CASCADE,
             provider_id VARCHAR(255) NOT NULL,
+            "providerId" VARCHAR(255),
             account_id VARCHAR(255) NOT NULL,
+            "accountId" VARCHAR(255),
             access_token TEXT,
+            "accessToken" TEXT,
             refresh_token TEXT,
+            "refreshToken" TEXT,
             id_token TEXT,
+            "idToken" TEXT,
             access_token_expires_at VARCHAR(255),
+            "accessTokenExpiresAt" VARCHAR(255),
             refresh_token_expires_at VARCHAR(255),
+            "refreshTokenExpiresAt" VARCHAR(255),
             scope TEXT,
             password TEXT,
             created_at VARCHAR(255) NOT NULL,
-            updated_at VARCHAR(255) NOT NULL
+            "createdAt" VARCHAR(255),
+            updated_at VARCHAR(255) NOT NULL,
+            "updatedAt" VARCHAR(255)
           );
         `);
         // Migrate column name if password_hash exists
@@ -378,6 +434,18 @@ export class Database {
           CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_provider_account ON accounts (provider_id, account_id);
         `);
 
+        // Ensure camelCase columns exist on existing "accounts" table
+        await client.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "userId" VARCHAR(255) REFERENCES "user"(id) ON DELETE CASCADE;');
+        await client.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "providerId" VARCHAR(255);');
+        await client.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "accountId" VARCHAR(255);');
+        await client.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "accessToken" TEXT;');
+        await client.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "refreshToken" TEXT;');
+        await client.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "idToken" TEXT;');
+        await client.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "accessTokenExpiresAt" VARCHAR(255);');
+        await client.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "refreshTokenExpiresAt" VARCHAR(255);');
+        await client.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "createdAt" VARCHAR(255);');
+        await client.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS "updatedAt" VARCHAR(255);');
+
         // 4. "verification" Table
         await client.query(`
           CREATE TABLE IF NOT EXISTS "verification" (
@@ -385,33 +453,63 @@ export class Database {
             identifier TEXT NOT NULL,
             value TEXT NOT NULL,
             expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            "expiresAt" TIMESTAMP WITH TIME ZONE,
             created_at TIMESTAMP WITH TIME ZONE,
-            updated_at TIMESTAMP WITH TIME ZONE
+            "createdAt" TIMESTAMP WITH TIME ZONE,
+            updated_at TIMESTAMP WITH TIME ZONE,
+            "updatedAt" TIMESTAMP WITH TIME ZONE
           );
         `);
+
+        // Ensure camelCase columns exist on existing "verification" table
+        await client.query('ALTER TABLE "verification" ADD COLUMN IF NOT EXISTS "expiresAt" TIMESTAMP WITH TIME ZONE;');
+        await client.query('ALTER TABLE "verification" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;');
+        await client.query('ALTER TABLE "verification" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;');
+
+        // Check if workspaces table id is VARCHAR
+        let shouldRecreate = false;
+        try {
+          const checkColRes = await client.query(`
+            SELECT data_type FROM information_schema.columns 
+            WHERE table_name = 'workspaces' AND column_name = 'id'
+          `);
+          if (checkColRes.rows.length > 0 && checkColRes.rows[0].data_type !== 'uuid') {
+            shouldRecreate = true;
+          }
+        } catch (err) {
+          // ignore
+        }
+
+        if (shouldRecreate) {
+          console.log("Database: Outdated workspaces table structure detected. Recreating workspaces schema with UUID support.");
+          await client.query(`DROP TABLE IF EXISTS workspace_members CASCADE;`);
+          await client.query(`DROP TABLE IF EXISTS applications CASCADE;`);
+          await client.query(`DROP TABLE IF EXISTS workspaces CASCADE;`);
+        }
+
+        await client.query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto";`);
 
         // 5. workspaces Table
         await client.query(`
           CREATE TABLE IF NOT EXISTS workspaces (
-            id VARCHAR(255) PRIMARY KEY,
-            owner_id VARCHAR(255) NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             name VARCHAR(255) NOT NULL,
-            industry VARCHAR(255),
-            created_at VARCHAR(255) NOT NULL,
-            updated_at VARCHAR(255) NOT NULL
+            industry VARCHAR(100),
+            account_type VARCHAR(50) DEFAULT 'business',
+            team_size VARCHAR(50) DEFAULT '1',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
           );
         `);
 
         // 6. workspace_members Table
         await client.query(`
           CREATE TABLE IF NOT EXISTS workspace_members (
-            id VARCHAR(255) PRIMARY KEY,
-            workspace_id VARCHAR(255) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-            user_id VARCHAR(255) NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
-            role VARCHAR(50) NOT NULL DEFAULT 'member',
-            created_at VARCHAR(255) NOT NULL,
-            updated_at VARCHAR(255) NOT NULL,
-            UNIQUE(workspace_id, user_id)
+            workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
+            user_id VARCHAR(255) NOT NULL,
+            role VARCHAR(50) DEFAULT 'owner',
+            joined_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (workspace_id, user_id)
           );
         `);
 
@@ -419,12 +517,27 @@ export class Database {
         await client.query(`
           CREATE TABLE IF NOT EXISTS applications (
             id VARCHAR(255) PRIMARY KEY,
-            workspace_id VARCHAR(255) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+            workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
             name VARCHAR(255) NOT NULL,
             website_url TEXT NOT NULL,
             status VARCHAR(50) NOT NULL DEFAULT 'pending',
-            created_at VARCHAR(255) NOT NULL,
-            updated_at VARCHAR(255) NOT NULL
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          );
+        `);
+
+        // 7.5. apps Table for custom analysis pipeline
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS apps (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+            url VARCHAR(255) NOT NULL,
+            status VARCHAR(50) DEFAULT 'pending',
+            pages_count INT DEFAULT 0,
+            assets_count INT DEFAULT 0,
+            mobile_readiness INT DEFAULT 0,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
           );
         `);
 
@@ -554,36 +667,24 @@ export class Database {
     return sql.replace(/\?/g, () => `$${index++}`);
   }
 
+  private isTransientError(err: any): boolean {
+    if (!err) return false;
+    const msg = String(err.message || err).toLowerCase();
+    return (
+      msg.includes("terminated unexpectedly") ||
+      msg.includes("epipe") ||
+      msg.includes("econnreset") ||
+      msg.includes("socket hang up") ||
+      msg.includes("connection lost") ||
+      msg.includes("connection refused") ||
+      msg.includes("idle client error")
+    );
+  }
+
   /**
    * Standardized query method (supports both Sync JSON and Async Promise)
    */
-  public query<T = any>(sql: string, params: any[] = []): any {
-    if (this.isPostgresActive) {
-      const run = () => {
-        if (this.pgPool) {
-          const translatedSql = this.translateSql(sql);
-          return this.pgPool.query(translatedSql, params)
-            .then(res => res.rows)
-            .catch(err => {
-              console.error("Database connection query failed. Degrading to local JSON fallback engine:", err);
-              this.isPostgresActive = false;
-              this.loadJson();
-              return this.query(sql, params);
-            });
-        }
-        return Promise.resolve([]);
-      };
-      if (this.initializationPromise) {
-        return this.initializationPromise.then(run).catch(err => {
-          console.error("Database initialization promise failed during query. Degrading to local JSON fallback:", err);
-          this.isPostgresActive = false;
-          this.loadJson();
-          return this.query(sql, params);
-        });
-      }
-      return run();
-    }
-
+  private queryJson<T = any>(sql: string, params: any[] = []): T[] {
     // JSON fallback synchronous implementation
     const normalizedSql = sql.trim().replace(/\s+/g, " ").toLowerCase();
 
@@ -695,36 +796,51 @@ export class Database {
     return [];
   }
 
-  /**
-   * Standardized execute/write method (supports both Sync JSON and Async Promise)
-   */
-  public execute(sql: string, params: any[] = []): any {
+  public query<T = any>(sql: string, params: any[] = []): any {
     if (this.isPostgresActive) {
-      const run = () => {
+      const run = (attempt = 1): Promise<T[]> => {
         if (this.pgPool) {
           const translatedSql = this.translateSql(sql);
           return this.pgPool.query(translatedSql, params)
-            .then(() => {})
+            .then(res => res.rows)
             .catch(err => {
-              console.error("Database connection execution failed. Degrading to local JSON fallback engine:", err);
-              this.isPostgresActive = false;
-              this.loadJson();
-              return this.execute(sql, params);
+              if (attempt < 2 && this.isTransientError(err)) {
+                console.warn(`Database connection query transient error (attempt ${attempt}). Retrying...`, err.message || err);
+                return run(attempt + 1);
+              }
+              
+              const isPersistent = err.code && (err.code.startsWith("28") || err.code.startsWith("3D"));
+              if (isPersistent) {
+                console.error("Database connection query failed with persistent error. Degrading permanently:", err);
+                this.isPostgresActive = false;
+                this.loadJson();
+              } else {
+                console.error("Database connection query failed with transient/unknown error. Falling back to JSON for this query:", err);
+              }
+              
+              return Promise.resolve(this.queryJson<T>(sql, params));
             });
         }
-        return Promise.resolve();
+        return Promise.resolve([]);
       };
       if (this.initializationPromise) {
-        return this.initializationPromise.then(run).catch(err => {
-          console.error("Database initialization promise failed during execute. Degrading to local JSON fallback:", err);
+        return this.initializationPromise.then(() => run()).catch(err => {
+          console.error("Database initialization promise failed during query. Falling back to local JSON:", err);
           this.isPostgresActive = false;
           this.loadJson();
-          return this.execute(sql, params);
+          return Promise.resolve(this.queryJson<T>(sql, params));
         });
       }
       return run();
     }
 
+    return this.queryJson<T>(sql, params);
+  }
+
+  /**
+   * Standardized execute/write method (supports both Sync JSON and Async Promise)
+   */
+  private executeJson(sql: string, params: any[] = []): void {
     // JSON fallback synchronous implementation
     const normalizedSql = sql.trim().replace(/\s+/g, " ").toLowerCase();
 
@@ -981,6 +1097,49 @@ export class Database {
     }
   }
 
+  public execute(sql: string, params: any[] = []): any {
+    if (this.isPostgresActive) {
+      const run = (attempt = 1): Promise<void> => {
+        if (this.pgPool) {
+          const translatedSql = this.translateSql(sql);
+          return this.pgPool.query(translatedSql, params)
+            .then(() => {})
+            .catch(err => {
+              if (attempt < 2 && this.isTransientError(err)) {
+                console.warn(`Database connection execute transient error (attempt ${attempt}). Retrying...`, err.message || err);
+                return run(attempt + 1);
+              }
+              
+              const isPersistent = err.code && (err.code.startsWith("28") || err.code.startsWith("3D"));
+              if (isPersistent) {
+                console.error("Database connection execution failed with persistent error. Degrading permanently:", err);
+                this.isPostgresActive = false;
+                this.loadJson();
+              } else {
+                console.error("Database connection execution failed with transient/unknown error. Falling back to JSON for this execution:", err);
+              }
+              
+              this.executeJson(sql, params);
+              return Promise.resolve();
+            });
+        }
+        return Promise.resolve();
+      };
+      if (this.initializationPromise) {
+        return this.initializationPromise.then(() => run()).catch(err => {
+          console.error("Database initialization promise failed during execute. Falling back to local JSON:", err);
+          this.isPostgresActive = false;
+          this.loadJson();
+          this.executeJson(sql, params);
+          return Promise.resolve();
+        });
+      }
+      return run();
+    }
+
+    this.executeJson(sql, params);
+  }
+
   /**
    * Resets database state (used for testing cleanups)
    */
@@ -1017,35 +1176,54 @@ export class Database {
       return { status: "ok", database: "connected", reference: "JSON_FALLBACK" };
     }
     const start = Date.now();
-    try {
-      await this.pgPool.query("SELECT 1 AS healthy");
-      const latencyMs = Date.now() - start;
-      
-      let currentDb = "unknown";
-      let currentSch = "unknown";
+    let attempts = 0;
+    const maxAttempts = 2;
+    while (attempts < maxAttempts) {
       try {
-        const dbInfo = await this.pgPool.query("SELECT current_database(), current_schema()");
-        currentDb = dbInfo.rows[0]?.current_database || "unknown";
-        currentSch = dbInfo.rows[0]?.current_schema || "unknown";
-      } catch (innerErr) {
-        console.warn("Could not query current database/schema details:", innerErr);
+        await this.pgPool.query("SELECT 1 AS healthy");
+        const latencyMs = Date.now() - start;
+        
+        let currentDb = "unknown";
+        let currentSch = "unknown";
+        try {
+          const dbInfo = await this.pgPool.query("SELECT current_database(), current_schema()");
+          currentDb = dbInfo.rows[0]?.current_database || "unknown";
+          currentSch = dbInfo.rows[0]?.current_schema || "unknown";
+        } catch (innerErr) {
+          console.warn("Could not query current database/schema details:", innerErr);
+        }
+        
+        return {
+          status: "ok",
+          database: "reachable",
+          latencyMs,
+          currentDatabase: currentDb,
+          currentSchema: currentSch
+        };
+      } catch (err: any) {
+        attempts++;
+        if (attempts < maxAttempts && this.isTransientError(err)) {
+          console.warn(`Database: checkHealth transient error on attempt ${attempts}. Retrying...`, err.message || err);
+          await new Promise(resolve => setTimeout(resolve, 200));
+          continue;
+        }
+        console.error("Database connection check failed after attempts:", err);
+        
+        const isPersistent = err.code && (err.code.startsWith("28") || err.code.startsWith("3D"));
+        if (isPersistent) {
+          console.log("Database: Persistent connection error detected during health check. Degrading permanently.");
+          this.isPostgresActive = false;
+          this.loadJson();
+        } else {
+          console.log("Database: Transient connection error detected during health check. Keeping postgres active but returning degraded status.");
+        }
+        
+        const refId = `DB-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+        return { status: "degraded", database: "unreachable", reference: refId };
       }
-      
-      return {
-        status: "ok",
-        database: "reachable",
-        latencyMs,
-        currentDatabase: currentDb,
-        currentSchema: currentSch
-      };
-    } catch (err: any) {
-      console.error("Database connection check failed:", err);
-      console.log("Database: Connection error detected during health check. Degrading to local JSON fallback database.");
-      this.isPostgresActive = false;
-      this.loadJson();
-      const refId = `DB-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
-      return { status: "degraded", database: "unreachable", reference: refId };
     }
+    const refId = `DB-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+    return { status: "degraded", database: "unreachable", reference: refId };
   }
 }
 

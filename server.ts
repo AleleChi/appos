@@ -11,6 +11,8 @@ import { v2 as cloudinary } from "cloudinary";
 import { queue } from "./src/lib/queue";
 import { auth } from "./api/_lib/auth";
 import { toNodeHandler } from "better-auth/node";
+import workspacesRouter from "./api/workspaces";
+import appsRouter from "./api/apps";
 
 // Configure Cloudinary SDK securely using environment variables
 cloudinary.config({
@@ -97,52 +99,28 @@ app.set("trust proxy", 1);
 
 // CORS Middleware to allow cross-origin credential-carrying requests
 app.use((req, res, next) => {
-  const frontendUrl = (process.env.FRONTEND_URL || "https://appos-ten.vercel.app").trim();
   const allowedOrigins = [
     "https://appos-ten.vercel.app",
-    "https://appos.onrender.com",
-    "http://localhost:3000",
     "http://localhost:5173",
-    frontendUrl
+    "http://localhost:3000"
   ];
 
-  if (process.env.APP_URL) {
-    const appUrl = process.env.APP_URL.trim();
-    if (appUrl && !allowedOrigins.includes(appUrl)) {
-      allowedOrigins.push(appUrl);
-      if (appUrl.includes("ais-dev-")) {
-        const preUrl = appUrl.replace("ais-dev-", "ais-pre-");
-        if (!allowedOrigins.includes(preUrl)) {
-          allowedOrigins.push(preUrl);
-        }
-      }
-    }
-  }
-
-  if (process.env.BETTER_AUTH_TRUSTED_ORIGINS) {
-    process.env.BETTER_AUTH_TRUSTED_ORIGINS.split(",").forEach(o => {
-      const trimmed = o.trim();
-      if (trimmed && !allowedOrigins.includes(trimmed)) {
-        allowedOrigins.push(trimmed);
-      }
-    });
-  }
-
   const origin = req.headers.origin;
-  const isAiStudioPreview = origin && (
-    origin.endsWith(".run.app") ||
-    origin.endsWith(".googleusercontent.com") ||
-    origin.endsWith(".google.com")
-  );
 
-  if (origin && (allowedOrigins.includes(origin) || isAiStudioPreview)) {
+  // Dynamically approve trusted production, local development, and Google AI Studio sandbox domains
+  if (origin && (allowedOrigins.includes(origin) || origin.endsWith(".google.com") || origin.includes("aistudio") || origin.endsWith(".run.app") || origin.endsWith(".googleusercontent.com"))) {
     res.setHeader("Access-Control-Allow-Origin", origin);
-  } else {
-    res.setHeader("Access-Control-Allow-Origin", frontendUrl);
   }
+
   res.setHeader("Access-Control-Allow-Credentials", "true");
-  res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, PUT, PATCH, POST, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, x-better-auth-session, Cookie, Accept, X-Requested-With"
+  );
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD"
+  );
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
@@ -653,6 +631,17 @@ v1Router.get("/security/logs", requireAuth, async (req, res) => {
 });
 
 app.use("/api/v1", v1Router);
+app.use("/api", workspacesRouter);
+app.use(appsRouter);
+
+// Safety Net: Ensure any unmatched /api routes return clean JSON instead of HTML
+app.use("/api/*", (req, res) => {
+  res.status(404).json({ 
+    error: "API endpoint not found", 
+    path: req.originalUrl,
+    suggestion: "Check that the router is correctly mounted and path prefixes match."
+  });
+});
 
 /**
  * CANONICAL BETTER AUTH RETIREMENT NOTICE

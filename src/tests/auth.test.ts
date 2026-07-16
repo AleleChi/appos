@@ -5,7 +5,8 @@ import crypto from "crypto";
 import bcryptjs from "bcryptjs";
 import express from "express";
 import http from "http";
-import handler from "../../api/auth/[...all]";
+import { auth } from "../../api/_lib/auth";
+import { toNodeHandler } from "better-auth/node";
 import { Database } from "../lib/db";
 
 /**
@@ -318,7 +319,7 @@ async function runTests() {
   // CORS check and handler forwarding
   integrationApp.all("/api/auth/*", async (req, res) => {
     try {
-      await handler(req, res);
+      await toNodeHandler(auth.handler)(req, res);
     } catch (err: any) {
       console.error("[Integration Server] Error:", err);
       res.status(500).json({ error: err.message || "Internal server error" });

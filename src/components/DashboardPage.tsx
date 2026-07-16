@@ -258,6 +258,18 @@ export default function DashboardPage({ user, onLogout }: DashboardPageProps) {
                     <h3 className="font-display font-extrabold text-base text-slate-950">Active Codebase Blueprints</h3>
                     <p className="text-xs text-slate-400 mt-0.5">Website to mobile code generators configured inside this session</p>
                   </div>
+                  <button
+                    onClick={() => {
+                      const match = window.location.pathname.match(/^\/workspace\/([^\/]+)/);
+                      const wsId = match ? match[1] : (workspaces[0]?.id || "default");
+                      window.history.pushState(null, "", `/workspace/${wsId}/connect`);
+                      window.dispatchEvent(new PopStateEvent("popstate"));
+                    }}
+                    className="flex items-center gap-1.5 bg-indigo-600 text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm cursor-pointer"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Connect Website
+                  </button>
                 </div>
 
                 <div className="divide-y divide-slate-100">

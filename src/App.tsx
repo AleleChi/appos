@@ -8,6 +8,9 @@ import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import SignupPage from "./components/SignupPage";
 import DashboardPage from "./components/DashboardPage";
+import WorkspaceCreationPage from "./pages/WorkspaceCreationPage";
+import WorkspaceGuard from "./components/WorkspaceGuard";
+import ConnectWebsitePage from "./pages/ConnectWebsitePage";
 
 // Lazy-loaded components for dynamic bundle splitting
 const LandingPage = React.lazy(() => import("./components/LandingPage"));
@@ -38,6 +41,8 @@ export default function App() {
     | "auth-callback"
     | "auth-error"
     | "auth-link-account"
+    | "workspace-creation"
+    | "connect-website"
     | "not-found"
     | "server-error"
   >("home");
@@ -130,6 +135,22 @@ export default function App() {
         setCurrentPage("auth-error");
       } else if (path === "/auth/link-account") {
         setCurrentPage("auth-link-account");
+      } else if (path === "/workspace/create" || path === "/workspace-creation") {
+        setCurrentPage("workspace-creation");
+      } else if (path.startsWith("/workspace/") && path.endsWith("/connect")) {
+        if (user) {
+          setCurrentPage("connect-website");
+        } else {
+          setCurrentPage("login");
+          window.history.replaceState(null, "", "/login");
+        }
+      } else if (path.startsWith("/workspace/") && path.endsWith("/dashboard")) {
+        if (user) {
+          setCurrentPage("dashboard");
+        } else {
+          setCurrentPage("login");
+          window.history.replaceState(null, "", "/login");
+        }
       } else if (path === "/dashboard") {
         if (user) {
           setCurrentPage("dashboard");
@@ -173,9 +194,20 @@ export default function App() {
       window.history.pushState(null, "", "/auth/error" + search);
     } else if (currentPage === "auth-link-account" && path !== "/auth/link-account") {
       window.history.pushState(null, "", "/auth/link-account" + search);
+    } else if (currentPage === "workspace-creation" && path !== "/workspace/create") {
+      window.history.pushState(null, "", "/workspace/create" + search);
+    } else if (currentPage === "connect-website" && !path.startsWith("/workspace/") && !path.endsWith("/connect")) {
+      if (user) {
+        const workspaceIdMatch = path.match(/^\/workspace\/([^\/]+)/);
+        const wsId = workspaceIdMatch ? workspaceIdMatch[1] : "default";
+        window.history.pushState(null, "", `/workspace/${wsId}/connect` + search);
+      } else {
+        setCurrentPage("login");
+        window.history.replaceState(null, "", "/login" + search);
+      }
     } else if (currentPage === "not-found") {
       // Do not replace address bar so user can see their invalid path, but do not push state to prevent infinite loops
-    } else if (currentPage === "dashboard" && path !== "/dashboard") {
+    } else if (currentPage === "dashboard" && !path.startsWith("/workspace/") && path !== "/dashboard") {
       if (user) {
         window.history.pushState(null, "", "/dashboard" + search);
       } else {
@@ -188,16 +220,40 @@ export default function App() {
   // Redirect authenticated users away from authentication views to prevent signup/login loops
   useEffect(() => {
     if (user && ["signup", "login", "forgot-password", "reset-password"].includes(currentPage)) {
-      setCurrentPage("dashboard");
+      fetch("/api/auth/status")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.workspaces && data.workspaces.length > 0) {
+            window.history.pushState(null, "", `/workspace/${data.workspaces[0].id}/dashboard`);
+            setCurrentPage("dashboard");
+          } else {
+            setCurrentPage("workspace-creation");
+          }
+        })
+        .catch(() => {
+          setCurrentPage("workspace-creation");
+        });
     }
   }, [user, currentPage]);
 
-    // Sync initial routing with current session if landed on login/signup/home
+  // Sync initial routing with current session if landed on login/signup/home
   useEffect(() => {
     if (!isSessionLoading && user) {
       const path = window.location.pathname;
       if (path === "/login" || path === "/signup" || path === "/") {
-        setCurrentPage("dashboard");
+        fetch("/api/auth/status")
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.workspaces && data.workspaces.length > 0) {
+              window.history.pushState(null, "", `/workspace/${data.workspaces[0].id}/dashboard`);
+              setCurrentPage("dashboard");
+            } else {
+              setCurrentPage("workspace-creation");
+            }
+          })
+          .catch(() => {
+            setCurrentPage("workspace-creation");
+          });
       }
     }
   }, [isSessionLoading, user]);
@@ -224,7 +280,7 @@ if (isSessionLoading) {
   ].includes(currentPage);
 
   // Under protected routing: redirect unauthenticated access away from dashboard
-  if (currentPage === "dashboard" && !user) {
+  if ((currentPage === "dashboard" || currentPage === "connect-website") && !user) {
     setCurrentPage("login");
     return null;
   }
@@ -232,7 +288,7 @@ if (isSessionLoading) {
   return (
     <div className="min-h-screen bg-[#F7F9FC] flex flex-col antialiased font-sans">
       {/* 1. Shared Navigation Header (Hidden on dashboard and auth screens) */}
-      {!isAuthPage && currentPage !== "dashboard" && (
+      {!isAuthPage && currentPage !== "dashboard" && currentPage !== "workspace-creation" && currentPage !== "connect-website" && (
         <Navbar
           currentPage={currentPage}
           setCurrentPage={(page) => setCurrentPage(page as any)}
@@ -245,10 +301,26 @@ if (isSessionLoading) {
       <main className="flex-1">
         <React.Suspense fallback={null}>
           {currentPage === "dashboard" ? (
-            <DashboardPage
-              user={user}
-              onLogout={async () => {
-                await authService.logout();
+            <WorkspaceGuard user={user} onNavigate={(page) => setCurrentPage(page as any)}>
+              <DashboardPage
+                user={user}
+                onLogout={async () => {
+                  await authService.logout();
+                  setCurrentPage("home");
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+              />
+            </WorkspaceGuard>
+          ) : currentPage === "connect-website" ? (
+            <ConnectWebsitePage />
+          ) : currentPage === "workspace-creation" ? (
+            <WorkspaceCreationPage
+              onWorkspaceCreated={(workspaceId) => {
+                window.history.pushState(null, "", `/workspace/${workspaceId}/dashboard`);
+                setCurrentPage("dashboard");
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+              onBackToHome={() => {
                 setCurrentPage("home");
                 window.scrollTo({ top: 0, behavior: "smooth" });
               }}
@@ -289,11 +361,27 @@ if (isSessionLoading) {
                 setCurrentPage("home");
                 window.scrollTo({ top: 0, behavior: "smooth" });
               }}
-              onSignupSuccess={() => {
-                setTimeout(() => {
-                  setCurrentPage("dashboard");
-                  window.scrollTo({ top: 0, behavior: "smooth" });
-                }, 1200);
+              onSignupSuccess={async () => {
+                try {
+                  const response = await fetch("/api/auth/status");
+                  if (response.ok) {
+                    const data = await response.json();
+                    if (data.workspaces && data.workspaces.length > 0) {
+                      window.history.pushState(null, "", `/workspace/${data.workspaces[0].id}/dashboard`);
+                      setCurrentPage("dashboard");
+                    } else {
+                      window.history.pushState(null, "", "/workspace/create");
+                      setCurrentPage("workspace-creation");
+                    }
+                  } else {
+                    window.history.pushState(null, "", "/workspace/create");
+                    setCurrentPage("workspace-creation");
+                  }
+                } catch (err) {
+                  window.history.pushState(null, "", "/workspace/create");
+                  setCurrentPage("workspace-creation");
+                }
+                window.scrollTo({ top: 0, behavior: "smooth" });
               }}
             />
           ) : currentPage === "home" ? (
@@ -322,7 +410,7 @@ if (isSessionLoading) {
       </main>
 
       {/* 9. Shared Footer Section (Hidden on dashboard and auth screens) */}
-      {!isAuthPage && currentPage !== "dashboard" && (
+      {!isAuthPage && currentPage !== "dashboard" && currentPage !== "workspace-creation" && currentPage !== "connect-website" && (
         <Footer 
           currentPage={currentPage} 
           setCurrentPage={(page) => setCurrentPage(page as any)} 

@@ -17,6 +17,13 @@ export default defineConfig(() => {
       watch: {
         ignored: ['**/.git_corrupt_backup/**', '**/*.tmp'],
       },
+      proxy: {
+        "/api": {
+          target: "http://localhost:8080",
+          changeOrigin: true,
+          secure: false
+        }
+      }
     },
     optimizeDeps: {
       include: [
