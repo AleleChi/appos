@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { getApiUrl } from "../lib/api-config";
 
 interface WorkspaceGuardProps {
   user: any;
@@ -19,7 +20,17 @@ export default function WorkspaceGuard({ user, onNavigate, children }: Workspace
       }
 
       try {
-        const response = await fetch("/api/auth/status");
+        const sessionToken = localStorage.getItem("better-auth.session_token") || "";
+        const targetUrl = getApiUrl("/api/auth/status");
+
+        const response = await fetch(targetUrl, {
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${sessionToken}`,
+            "x-better-auth-session": sessionToken
+          },
+          credentials: "include"
+        });
         
         if (!response.ok) {
           onNavigate("login");

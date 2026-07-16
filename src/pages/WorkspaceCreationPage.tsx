@@ -1,6 +1,6 @@
 import React, { useState } from "react";
+import Swal from "sweetalert2";
 import { getApiUrl } from "../lib/api-config";
-
 
 // Inline vector icon components to ensure cross-platform brand alignment
 const GridIcon = () => (
@@ -28,19 +28,19 @@ const ShieldIcon = () => (
 );
 
 const BriefcaseIcon = () => (
-  <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+  <svg className="w-6 h-6 mb-1.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
   </svg>
 );
 
 const CodeIcon = () => (
-  <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+  <svg className="w-6 h-6 mb-1.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
   </svg>
 );
 
 const BuildingIcon = () => (
-  <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+  <svg className="w-6 h-6 mb-1.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
   </svg>
 );
@@ -62,30 +62,27 @@ export default function WorkspaceCreationPage({ onWorkspaceCreated, onBackToHome
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const navigate = (path: string) => {
+    window.history.pushState(null, "", path);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
 
-    const navigate = (path: string) => {
-      const match = path.match(/\/workspace\/([^\/]+)\/dashboard/);
-      if (match) {
-        onWorkspaceCreated(match[1]);
-      } else {
-        window.history.pushState(null, "", path);
-        window.dispatchEvent(new PopStateEvent("popstate"));
-      }
-    };
-
     try {
-      // Resolve the destination dynamically (relative for dev/previews, direct for prod)
+      // 1. Header-Based Token Extraction to securely bypass browser sandbox iframe cookie blocking
+      const sessionToken = localStorage.getItem("better-auth.session_token") || "";
       const targetUrl = getApiUrl("/api/workspaces");
 
       const response = await fetch(targetUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("session_token") || ""}`
+          "Authorization": `Bearer ${sessionToken}`,
+          "x-better-auth-session": sessionToken
         },
         credentials: "include",
         body: JSON.stringify({
@@ -97,20 +94,34 @@ export default function WorkspaceCreationPage({ onWorkspaceCreated, onBackToHome
       });
 
       const contentType = response.headers.get("content-type");
-      
-      // Safety Net: Catch server crashes (HTML responses) before they trigger JSON parse errors
       if (contentType && contentType.includes("text/html")) {
         const htmlText = await response.text();
-        // Extract the page title or body to display a helpful error
         const match = htmlText.match(/<title>(.*?)<\/title>/);
-        const serverError = match ? match[1] : "Server returned HTML instead of JSON.";
-        throw new Error(`[Server Error ${response.status}]: ${serverError}. This usually means the backend is still deploying or has crashed on startup. Please check your Render log console.`);
+        const serverError = match ? match[1] : "Gateway Configuration Error";
+        throw new Error(`[Server Error ${response.status}]: ${serverError}. Check Render logs.`);
       }
 
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to create workspace");
       
-      navigate(`/workspace/${data.workspaceId}/dashboard`);
+      // 2. High-Fidelity SweetAlert2 Confirmation Popup matching Stitch brand tones
+      Swal.fire({
+        title: "Workspace Created!",
+        text: `Your workspace "${data.name}" was built successfully. Let's set up your mobile experience next!`,
+        icon: "success",
+        confirmButtonColor: "#5046E6", // Indigo core brand color token
+        confirmButtonText: "Continue",
+        background: "#FFFFFF",
+        customClass: {
+          popup: "rounded-2xl border border-slate-100 shadow-xl",
+          title: "text-slate-900 font-extrabold tracking-tight",
+          htmlContainer: "text-slate-500 font-medium text-sm leading-relaxed"
+        }
+      }).then(() => {
+        // 3. Perfect Route Transition: Forward direct to Step 1 Connect Website Flow
+        navigate(`/workspace/${data.workspaceId}/connect`);
+      });
+
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -139,16 +150,10 @@ export default function WorkspaceCreationPage({ onWorkspaceCreated, onBackToHome
         
         {/* Absolute-Positioned Connected Radial Path Layer */}
         <div className="my-auto flex items-center justify-center relative h-96 w-full">
-          
-          {/* Radial line background svg */}
           <svg className="absolute inset-0 w-full h-full text-[#1E293B]/60" fill="none">
-            {/* Top-Left to Center */}
             <line x1="20%" y1="15%" x2="50%" y2="50%" stroke="currentColor" strokeWidth="1" strokeDasharray="4 4" />
-            {/* Top-Right to Center */}
             <line x1="80%" y1="15%" x2="50%" y2="50%" stroke="currentColor" strokeWidth="1" strokeDasharray="4 4" />
-            {/* Bottom-Left to Center */}
             <line x1="20%" y1="85%" x2="50%" y2="50%" stroke="currentColor" strokeWidth="1" strokeDasharray="4 4" />
-            {/* Bottom-Right to Center */}
             <line x1="80%" y1="85%" x2="50%" y2="50%" stroke="currentColor" strokeWidth="1" strokeDasharray="4 4" />
           </svg>
 
@@ -211,11 +216,12 @@ export default function WorkspaceCreationPage({ onWorkspaceCreated, onBackToHome
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="e.g. Acme Corp"
+                    maxLength={100}
+                    minLength={2}
                     className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/30 focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 text-sm placeholder-slate-400 transition-all duration-150"
                   />
                 </div>
 
-                {/* Hide complex options on mobile step 1 */}
                 <div className="hidden lg:block space-y-6">
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2.5">Industry</label>
@@ -283,7 +289,6 @@ export default function WorkspaceCreationPage({ onWorkspaceCreated, onBackToHome
                   </div>
                 </div>
 
-                {/* Mobile Button Step 1 */}
                 <button
                   type="button"
                   onClick={() => formData.name && setStep(2)}
@@ -292,7 +297,6 @@ export default function WorkspaceCreationPage({ onWorkspaceCreated, onBackToHome
                   Continue →
                 </button>
 
-                {/* Desktop Submission Button */}
                 <button
                   type="submit"
                   disabled={loading}
@@ -394,3 +398,4 @@ export default function WorkspaceCreationPage({ onWorkspaceCreated, onBackToHome
     </div>
   );
 }
+

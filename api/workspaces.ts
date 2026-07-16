@@ -10,6 +10,12 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
 });
 
+// Helper to strip HTML tags to prevent XSS attacks
+const sanitizeInput = (val: string): string => {
+  if (!val) return "";
+  return val.replace(/<[^>]*>/g, "").trim();
+};
+
 router.post("/workspaces", async (req, res) => {
   // Try to parse headers to Headers class for better-auth
   const headers = new Headers();
@@ -23,19 +29,35 @@ router.post("/workspaces", async (req, res) => {
 
   const session = await auth.api.getSession({ headers });
   if (!session || !session.user) {
-    return res.status(401).json({ error: "Unauthorized access" });
+    return res.status(401).json({ error: "Unauthorized access: Missing or invalid session credentials" });
   }
 
-  const { name, industry, account_type, team_size } = req.body;
-  if (!name) {
-    return res.status(400).json({ error: "Workspace name is required" });
+  const rawName = req.body.name;
+  const rawIndustry = req.body.industry;
+  const rawAccountType = req.body.account_type;
+  const rawTeamSize = req.body.team_size;
+
+  // 1. Strict Sanitization
+  const name = sanitizeInput(rawName);
+  const industry = sanitizeInput(rawIndustry);
+  
+  // 2. Input Length Validation
+  if (!name || name.length < 2 || name.length > 100) {
+    return res.status(400).json({ error: "Workspace name must be between 2 and 100 characters long" });
   }
+
+  // 3. Strict Enum Validation
+  const allowedAccountTypes = ["business", "agency", "developer", "enterprise"];
+  const account_type = allowedAccountTypes.includes(rawAccountType) ? rawAccountType : "business";
+
+  const allowedTeamSizes = ["Just me (1)", "2-9 members", "10-49 members", "50+ members"];
+  const team_size = allowedTeamSizes.includes(rawTeamSize) ? rawTeamSize : "Just me (1)";
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // Insert Workspace
+    // Secure parameterized insertion to prevent SQL Injection
     const workspaceQuery = `
       INSERT INTO workspaces (id, name, industry, account_type, team_size, created_at, updated_at)
       VALUES (gen_random_uuid(), $1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
@@ -44,8 +66,8 @@ router.post("/workspaces", async (req, res) => {
     const workspaceResult = await client.query(workspaceQuery, [
       name,
       industry || null,
-      account_type || "business",
-      team_size || "1"
+      account_type,
+      team_size
     ]);
     const workspaceId = workspaceResult.rows[0].id;
 
@@ -60,8 +82,8 @@ router.post("/workspaces", async (req, res) => {
     res.status(201).json({ workspaceId, name });
   } catch (error: any) {
     await client.query("ROLLBACK");
-    console.error("Workspace creation failure:", error);
-    res.status(500).json({ error: "Internal server error", message: error.message });
+    console.error("DEBUG: Workspace creation failed inside transaction:", error);
+    res.status(500).json({ error: "Internal database server error", message: error.message });
   } finally {
     client.release();
   }
