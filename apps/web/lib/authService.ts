@@ -24,39 +24,39 @@ const FETCH_FAIL_MSG = "We could not reach AppOS. Check your connection and try 
 function handleError(err: any): AuthResponse {
   console.error("[authService error]", err);
   const errMsg = err?.error?.message || err?.message || "";
+  const lower = errMsg.toLowerCase();
   
   if (
-    errMsg.includes("is not a function") || 
-    errMsg.includes("WEBPACK") || 
-    errMsg.includes("undefined") || 
-    errMsg.includes("Cannot read properties") ||
-    errMsg.includes("null")
+    lower.includes("cors") ||
+    lower.includes("network") ||
+    lower.includes("fetch") ||
+    lower.includes("socket") ||
+    lower.includes("failed to fetch") ||
+    lower.includes("connect") ||
+    lower.includes("unavailable") ||
+    lower.includes("dns") ||
+    lower.includes("502") ||
+    lower.includes("503") ||
+    lower.includes("504") ||
+    lower.includes("econnrefused")
   ) {
     return {
       success: false,
-      message: "We couldn’t complete sign-in. Please try again."
+      message: "AppOS sign-in is temporarily unavailable. Please try again in a moment."
     };
   }
 
   if (
-    errMsg.includes("fetch") || 
-    errMsg.includes("NetworkError") || 
-    errMsg.includes("Failed to fetch") || 
-    errMsg.includes("ECONNREFUSED")
-  ) {
-    return {
-      success: false,
-      message: "We couldn’t reach AppOS. Please try again."
-    };
-  }
-
-  if (
-    errMsg.includes("credential") || 
-    errMsg.includes("invalid") || 
-    errMsg.includes("Invalid") || 
-    errMsg.includes("password") || 
-    errMsg.includes("Password") ||
-    errMsg.includes("match")
+    lower.includes("invalid combination") ||
+    lower.includes("user matching error") ||
+    lower.includes("invalid_credentials") ||
+    lower.includes("invalid credentials") ||
+    lower.includes("incorrect password") ||
+    lower.includes("invalid password") ||
+    lower.includes("invalid email or password") ||
+    lower.includes("authentication failed") ||
+    lower.includes("invalid email") ||
+    lower.includes("credential")
   ) {
     return {
       success: false,
@@ -64,9 +64,24 @@ function handleError(err: any): AuthResponse {
     };
   }
 
+  if (
+    lower.includes("sql unique") ||
+    lower.includes("unique index") ||
+    lower.includes("already exists") ||
+    lower.includes("user_already_exists") ||
+    lower.includes("email_already_in_use") ||
+    lower.includes("already in use") ||
+    lower.includes("email already")
+  ) {
+    return {
+      success: false,
+      message: "An account may already exist for this email. Sign in or reset your password."
+    };
+  }
+
   return {
     success: false,
-    message: "We couldn’t complete sign-in. Please try again."
+    message: "AppOS sign-in is temporarily unavailable. Please try again in a moment."
   };
 }
 
@@ -249,13 +264,32 @@ ERROR MESSAGE: ${err.message || String(err)}`);
   },
 
   /**
-   * Securely confirms Google OAuth account linking (legacy fallback)
+   * Securely confirms Google OAuth account linking using official Better Auth client
    */
   async linkGoogle(body: any): Promise<AuthResponse> {
-    return {
-      success: true,
-      message: "Google account linked successfully."
-    };
+    try {
+      const { error } = await (authClient as any).linkSocial({
+        provider: "google",
+        callbackURL: "/dashboard"
+      });
+
+      if (error) {
+        return {
+          success: false,
+          message: error.message || "Failed to link Google account."
+        };
+      }
+
+      return {
+        success: true,
+        message: "Google account linked successfully."
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err.message || "Failed to link Google account."
+      };
+    }
   },
 
   /**

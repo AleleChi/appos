@@ -17,7 +17,7 @@ import { cn } from "../lib/utils";
 
 // Translate technical database/server errors to elegant, actionable human language
 const translateError = (err: any): string => {
-  if (!err) return "An unexpected error occurred. Please try again.";
+  if (!err) return "AppOS sign-in is temporarily unavailable. Please try again in a moment.";
   
   const message = typeof err === "string" ? err : err.message || "";
   const lower = message.toLowerCase();
@@ -28,9 +28,15 @@ const translateError = (err: any): string => {
     lower.includes("fetch") ||
     lower.includes("socket") ||
     lower.includes("failed to fetch") ||
-    lower.includes("connect")
+    lower.includes("connect") ||
+    lower.includes("unavailable") ||
+    lower.includes("dns") ||
+    lower.includes("502") ||
+    lower.includes("503") ||
+    lower.includes("504") ||
+    lower.includes("econnrefused")
   ) {
-    return "We couldn't connect securely. Please verify your connection and try again.";
+    return "AppOS sign-in is temporarily unavailable. Please try again in a moment.";
   }
   
   if (
@@ -57,10 +63,10 @@ const translateError = (err: any): string => {
     lower.includes("already in use") ||
     lower.includes("email already")
   ) {
-    return "An account may already exist for this email. Try signing in or reset your password.";
+    return "An account may already exist for this email. Sign in or reset your password.";
   }
   
-  return message || "An unexpected error occurred. Please try again.";
+  return "AppOS sign-in is temporarily unavailable. Please try again in a moment.";
 };
 
 // Rate-limiting resend verification email countdown component
@@ -243,7 +249,7 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
       setPassword("");
       setErrors({});
     } else if (oauthError) {
-      let displayError = "We couldn’t complete Google sign-in. Please try again.";
+      let displayError = "Google sign-in is temporarily unavailable. Use email and password, or try again later.";
       const errLower = oauthError.toLowerCase();
       if (errLower.includes("cancel") || errLower.includes("cancelled") || errLower.includes("user_cancelled")) {
         displayError = "Google sign-in was cancelled. Please try again.";
@@ -253,9 +259,10 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
         errLower.includes("client_secret") ||
         errLower.includes("provider_unavailable") ||
         errLower.includes("missing_configuration") ||
-        errLower.includes("configuration_not_found")
+        errLower.includes("configuration_not_found") ||
+        errLower.includes("google")
       ) {
-        displayError = "Google sign-in is temporarily unavailable.";
+        displayError = "Google sign-in is temporarily unavailable. Use email and password, or try again later.";
       }
       setErrors({ general: displayError });
     }
@@ -447,17 +454,17 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
     if (googleState === "launching" || googleState === "redirecting") return;
 
     setErrors({});
-    const isIframe = window.self !== window.top;
-    const isProductionHost = window.location.hostname === "appos-ten.vercel.app";
-    const isSandboxOrPreview = isIframe || !isProductionHost;
+    const isIframe = typeof window !== "undefined" && window.self !== window.top;
 
-    if (isSandboxOrPreview) {
+    if (isIframe) {
       setGoogleState("launching");
-      const targetOrigin = typeof window !== "undefined" ? window.location.origin : "";
-      const targetUrl = `${targetOrigin}/login?provider=google`;
+      // Use approved NEXT_PUBLIC_APP_URL value to avoid using iframe's window.location.origin
+      const canonicalAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://appos-ten.vercel.app";
+      const targetUrl = `${canonicalAppUrl.replace(/\/+$/, "")}/login?provider=google`;
       const newWin = window.open(targetUrl, "_blank");
       if (!newWin || newWin.closed || typeof newWin.closed === "undefined") {
         setGoogleState("popup_blocked");
+        setErrors({ general: "Google sign-in was blocked by a popup blocker. Please allow popups or open the app in a new tab." });
       } else {
         setGoogleState("redirecting");
       }
@@ -466,14 +473,14 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
 
     setGoogleState("launching");
     try {
-      await (authClient as any).signIn.social({
+      await authClient.signIn.social({
         provider: "google",
         callbackURL: "/dashboard",
-        errorCallbackURL: "/auth/error?code=provider_unavailable"
+        errorCallbackURL: "/login?oauthError=google"
       });
     } catch (err: any) {
       console.error(err);
-      setErrors({ general: "Unable to initiate Google sign in." });
+      setErrors({ general: "Google sign-in is temporarily unavailable. Use email and password, or try again later." });
       setGoogleState("failed");
     }
   };
@@ -557,7 +564,63 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
 
           {errors.general && (
             <div className="mb-5 p-3.5 bg-rose-50 border border-rose-100 rounded-lg text-xs font-medium text-rose-600">
-              {errors.general}
+              <div>{errors.general}</div>
+              {mode === "login" && errors.general === "We couldn’t sign you in with those details. Check your email and password, or create an account." && (
+                <div className="mt-2.5 flex items-center gap-3 border-t border-rose-100 pt-2 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode("signup");
+                      setPassword("");
+                      setErrors({});
+                      window.history.pushState(null, "", "/signup" + window.location.search);
+                    }}
+                    className="font-bold text-indigo-600 hover:text-indigo-700 hover:underline bg-transparent border-0 p-0 cursor-pointer"
+                  >
+                    Create an account
+                  </button>
+                  <span className="text-rose-200">|</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode("forgot-password");
+                      setErrors({});
+                      window.history.pushState(null, "", "/forgot-password" + window.location.search);
+                    }}
+                    className="font-bold text-indigo-600 hover:text-indigo-700 hover:underline bg-transparent border-0 p-0 cursor-pointer"
+                  >
+                    Reset password
+                  </button>
+                </div>
+              )}
+              {mode === "signup" && errors.general === "An account may already exist for this email. Sign in or reset your password." && (
+                <div className="mt-2.5 flex items-center gap-3 border-t border-rose-100 pt-2 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode("login");
+                      setPassword("");
+                      setErrors({});
+                      window.history.pushState(null, "", "/login" + window.location.search);
+                    }}
+                    className="font-bold text-indigo-600 hover:text-indigo-700 hover:underline bg-transparent border-0 p-0 cursor-pointer"
+                  >
+                    Sign in
+                  </button>
+                  <span className="text-rose-200">|</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode("forgot-password");
+                      setErrors({});
+                      window.history.pushState(null, "", "/forgot-password" + window.location.search);
+                    }}
+                    className="font-bold text-indigo-600 hover:text-indigo-700 hover:underline bg-transparent border-0 p-0 cursor-pointer"
+                  >
+                    Reset password
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

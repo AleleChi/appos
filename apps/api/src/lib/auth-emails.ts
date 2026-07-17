@@ -1,8 +1,26 @@
 import { Resend } from "resend";
 
+const isProduction = process.env.NODE_ENV === "production";
+
+if (isProduction) {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error(
+      "FATAL CONFIGURATION ERROR: RESEND_API_KEY is required in production environments! Email service startup aborted."
+    );
+  }
+  if (!process.env.EMAIL_FROM) {
+    throw new Error(
+      "FATAL CONFIGURATION ERROR: EMAIL_FROM is required in production environments! Email service startup aborted."
+    );
+  }
+}
+
 const getResend = () => {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
+    if (isProduction) {
+      throw new Error("FATAL CONFIGURATION ERROR: RESEND_API_KEY is missing in production.");
+    }
     console.warn("[Resend] RESEND_API_KEY is not defined. Emails will be logged to console (mocked).");
     return null;
   }
@@ -12,6 +30,10 @@ const getResend = () => {
 export async function sendVerificationEmail({ email, url }: { email: string; url: string }) {
   const resend = getResend();
   const from = process.env.EMAIL_FROM || "AppOS <onboarding@resend.dev>";
+  
+  if (isProduction && !process.env.EMAIL_FROM) {
+    throw new Error("FATAL CONFIGURATION ERROR: EMAIL_FROM is missing in production.");
+  }
   
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px; border: 1px solid #e5e7eb; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
@@ -80,6 +102,10 @@ NOTE: If using the Resend Sandbox (onboarding@resend.dev), emails will ONLY be d
 export async function sendResetPasswordEmail({ email, url }: { email: string; url: string }) {
   const resend = getResend();
   const from = process.env.EMAIL_FROM || "AppOS <onboarding@resend.dev>";
+  
+  if (isProduction && !process.env.EMAIL_FROM) {
+    throw new Error("FATAL CONFIGURATION ERROR: EMAIL_FROM is missing in production.");
+  }
   
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px; border: 1px solid #e5e7eb; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
