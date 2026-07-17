@@ -484,13 +484,22 @@ export function AuthVerifyEmailView({
         const res = await authService.verifyEmail(token);
         if (res.success) {
           setStatus("success");
+          setTimeout(() => {
+            window.location.href = "/login?verified=true";
+          }, 1500);
         } else {
           setStatus("error");
-          setErrorDetails(translateError(res.message) || "The activation link has expired or has already been used. Please request a new verification link.");
+          setErrorDetails("This verification link is invalid or has expired. Request a new link.");
+          setTimeout(() => {
+            window.location.href = "/login?verified=false";
+          }, 1500);
         }
       } catch (err: any) {
         setStatus("error");
-        setErrorDetails(translateError(err) || "We couldn't connect securely. Please verify your connection and try again.");
+        setErrorDetails("This verification link is invalid or has expired. Request a new link.");
+        setTimeout(() => {
+          window.location.href = "/login?verified=false";
+        }, 1500);
       }
     };
 

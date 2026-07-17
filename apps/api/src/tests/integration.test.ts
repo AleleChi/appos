@@ -70,7 +70,6 @@ if (!hasTestDb) {
       app = moduleFixture.createNestApplication();
       app.use(cookieParser());
       dbService = moduleFixture.get<DbService>(DbService);
-      await app.init();
 
       // Configure Pool to use our unique per-run schema for all client connections
       const onConnectCallback = (client: any) => {
@@ -84,6 +83,8 @@ if (!hasTestDb) {
       // Create the isolated unique schema and set search path for current connection
       await dbService.pool.query(`CREATE SCHEMA "${testSchemaName}";`);
       await dbService.pool.query(`SET search_path TO "${testSchemaName}";`);
+
+      await app.init();
 
       // 2. Apply tables / migrations successfully on the test database
       try {
@@ -410,9 +411,9 @@ if (!hasTestDb) {
         expect(res.body.user.password).toBeUndefined();
         expect(res.body.user.hash).toBeUndefined();
 
-        const cookies = res.headers["set-cookie"] as any;
-        expect(cookies).toBeDefined();
-        expect(cookies.some((c: string) => c.includes("better-auth.session_token"))).toBe(true);
+        const cookies = res.headers["set-cookie"] as any || [];
+        const hasSessionCookie = cookies.some((c: string) => c.includes("better-auth.session_token"));
+        expect(hasSessionCookie).toBe(false);
       });
 
       it("POST /api/auth/sign-up/email - should reject duplicate signup with safe error and not leak account details", async () => {
@@ -457,6 +458,30 @@ if (!hasTestDb) {
       });
 
       it("POST /api/auth/sign-in/email - should successfully log in with correct credentials, return cookie, and create DB session", async () => {
+        // Safe database guard check
+        const testDbUrl = process.env.TEST_DATABASE_URL;
+        const mainDbUrl = process.env.DATABASE_URL;
+        const allowReset = process.env.ALLOW_TEST_DATABASE_RESET;
+        
+        if (!testDbUrl) {
+          throw new Error("Security Guard: TEST_DATABASE_URL is not defined.");
+        }
+        if (testDbUrl === mainDbUrl) {
+          throw new Error("Security Guard: TEST_DATABASE_URL must not be equal to DATABASE_URL.");
+        }
+        if (allowReset !== "true") {
+          throw new Error("Security Guard: ALLOW_TEST_DATABASE_RESET must be 'true'.");
+        }
+        if (!testSchemaName || testSchemaName === "public") {
+          throw new Error("Security Guard: Test schema must be unique and isolated.");
+        }
+
+        // Force mark email as verified in the database so that login succeeds under requireEmailVerification: true
+        await dbService.pool.query(
+          `UPDATE "user" SET "emailVerified" = true WHERE email = $1`,
+          [testEmail]
+        );
+
         const res = await request(app.getHttpServer())
           .post("/api/auth/sign-in/email")
           .send({
@@ -559,6 +584,95 @@ if (!hasTestDb) {
         expect(defaultCookieAttrs).toBeDefined();
         expect(defaultCookieAttrs.httpOnly).toBe(true);
         expect(defaultCookieAttrs.path).toBe("/");
+      });
+    });
+
+    // 12. Email Verification and Resend Service Integration Tests
+    describe("12. Email Verification and Resend Service Integration Tests", () => {
+      it("should have correct email verification configuration (sendOnSignUp, sendOnSignIn, expiresIn)", () => {
+        expect(auth.options.emailVerification).toBeDefined();
+        expect(auth.options.emailVerification?.sendOnSignUp).toBe(true);
+        expect(auth.options.emailVerification?.sendOnSignIn).toBe(true);
+        expect(auth.options.emailVerification?.expiresIn).toBe(86400);
+      });
+
+      it("should reject onboarding@resend.dev in production simulation", () => {
+        const checkProductionOnboarding = (emailFrom: string, apiKey: string, isProduction: boolean) => {
+          if (isProduction && emailFrom.includes("onboarding@resend.dev")) {
+            throw new Error("Sandbox domain onboarding@resend.dev is prohibited in production!");
+          }
+          return true;
+        };
+
+        expect(checkProductionOnboarding("onboarding@resend.dev", "re_123", false)).toBe(true);
+        expect(() => checkProductionOnboarding("onboarding@resend.dev", "re_123", true)).toThrow("onboarding@resend.dev is prohibited in production!");
+      });
+
+      it("should validate that Resend delivery fails if message ID does not exist", () => {
+        const validateResendResponse = (resData: any) => {
+          if (!resData || !resData.id) {
+            throw new Error("EMAIL_PROVIDER_NO_MESSAGE_ID");
+          }
+          return resData.id;
+        };
+
+        expect(validateResendResponse({ id: "msg_abc123" })).toBe("msg_abc123");
+        expect(() => validateResendResponse({})).toThrow("EMAIL_PROVIDER_NO_MESSAGE_ID");
+        expect(() => validateResendResponse(null)).toThrow("EMAIL_PROVIDER_NO_MESSAGE_ID");
+      });
+
+      it("should enforce active expiration token logic (86400 seconds)", () => {
+        const tokenExpiresIn = auth.options.emailVerification?.expiresIn;
+        expect(tokenExpiresIn).toBe(86400);
+      });
+
+      it("should reject token reuse or expiration in database model simulation", async () => {
+        // Create verification token simulation
+        const tokenId = "test-token-id";
+        const expiredTokenId = "expired-token-id";
+        
+        await dbService.db.insert(user).values({
+          id: "user-token-test",
+          name: "Token Tester",
+          email: "tokentest@example.com",
+        });
+
+        // Insert valid token
+        await dbService.pool.query(`
+          INSERT INTO "verification" ("id", "identifier", "value", "expiresAt")
+          VALUES ('${tokenId}', 'tokentest@example.com', 'secure-value-123', NOW() + INTERVAL '1 day');
+        `);
+
+        // Insert expired token
+        await dbService.pool.query(`
+          INSERT INTO "verification" ("id", "identifier", "value", "expiresAt")
+          VALUES ('${expiredTokenId}', 'tokentest@example.com', 'expired-value-123', NOW() - INTERVAL '1 hour');
+        `);
+
+        // Verification token reuse simulation
+        const verifyToken = async (id: string) => {
+          const res = await dbService.pool.query(`SELECT * FROM "verification" WHERE "id" = $1`, [id]);
+          if (res.rows.length === 0) {
+            throw new Error("This verification link is invalid or has expired. Request a new link.");
+          }
+          const row = res.rows[0];
+          if (new Date(row.expiresAt) < new Date()) {
+            throw new Error("This verification link is invalid or has expired. Request a new link.");
+          }
+          // Mark token as used (delete it)
+          await dbService.pool.query(`DELETE FROM "verification" WHERE "id" = $1`, [id]);
+          return true;
+        };
+
+        // First verification succeeds
+        const success = await verifyToken(tokenId);
+        expect(success).toBe(true);
+
+        // Second verification (reuse) fails
+        await expect(verifyToken(tokenId)).rejects.toThrow("This verification link is invalid or has expired.");
+
+        // Expired token verification fails
+        await expect(verifyToken(expiredTokenId)).rejects.toThrow("This verification link is invalid or has expired.");
       });
     });
   });

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Mail, ShieldCheck, CheckCircle2, Lock, ArrowLeft } from "lucide-react";
+import { Mail, ShieldCheck, CheckCircle2, Lock, ArrowLeft, XCircle } from "lucide-react";
 import {
   AuthLayout,
   AuthLogo,
@@ -49,7 +49,8 @@ const translateError = (err: any): string => {
     lower.includes("invalid email or password") ||
     lower.includes("authentication failed") ||
     lower.includes("invalid email") ||
-    lower.includes("credential")
+    lower.includes("credential") ||
+    lower.includes("user not found")
   ) {
     return "We couldn’t sign you in with those details. Check your email and password, or create an account.";
   }
@@ -73,11 +74,15 @@ const translateError = (err: any): string => {
 function SignupVerificationActions({
   email,
   onResend,
-  onSignIn
+  onSignIn,
+  verificationState,
+  setVerificationState
 }: {
   email: string;
-  onResend: () => Promise<void>;
+  onResend: () => Promise<boolean>;
   onSignIn: () => void;
+  verificationState: "ACCOUNT_CREATED_EMAIL_ACCEPTED" | "EMAIL_DELIVERY_FAILED" | "EMAIL_RATE_LIMITED" | "EMAIL_ALREADY_VERIFIED" | null;
+  setVerificationState: (state: any) => void;
 }) {
   const [countdown, setCountdown] = useState(0);
   const [resending, setResending] = useState(false);
@@ -100,11 +105,15 @@ function SignupVerificationActions({
     setResending(true);
     setStatusText("");
     try {
-      await onResend();
-      setCountdown(60);
-      setStatusText("Verification link sent.");
+      const success = await onResend();
+      if (success) {
+        setCountdown(60);
+        setStatusText("Verification link sent.");
+      } else {
+        setStatusText("");
+      }
     } catch (err) {
-      setStatusText("Failed to resend. Please try again.");
+      setStatusText("");
     } finally {
       setResending(false);
     }
@@ -112,31 +121,44 @@ function SignupVerificationActions({
 
   return (
     <div className="flex flex-col items-center gap-3 w-full">
-      <div className="flex items-center gap-1.5 text-slate-500 font-bold mb-2">
-        <span className="h-2.5 w-2.5 rounded-full bg-indigo-500 animate-pulse" />
-        <span>What if I didn't get it?</span>
-      </div>
-      <div className="flex gap-4 w-full">
-        <button
-          type="button"
-          disabled={countdown > 0 || resending}
-          onClick={handleResendClick}
-          className={cn(
-            "flex-1 rounded-lg border py-2.5 text-center text-xs font-bold transition-all cursor-pointer min-h-[44px]",
-            countdown > 0
-              ? "bg-slate-50 text-slate-400 border-slate-100 cursor-not-allowed"
-              : "border-slate-200 text-slate-700 hover:bg-slate-50"
-          )}
-        >
-          {countdown > 0 ? `Resend in ${countdown}s` : resending ? "Sending..." : "Resend verification link"}
-        </button>
-        <button
-          type="button"
-          onClick={onSignIn}
-          className="flex-1 rounded-lg bg-indigo-600 text-white py-2.5 text-center text-xs font-bold hover:bg-indigo-700 transition-all cursor-pointer min-h-[44px]"
-        >
-          Sign In
-        </button>
+      {verificationState !== "EMAIL_ALREADY_VERIFIED" && (
+        <div className="flex items-center gap-1.5 text-slate-500 font-bold mb-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-indigo-500 animate-pulse" />
+          <span>What if I didn't get it?</span>
+        </div>
+      )}
+      <div className="flex flex-col gap-3.5 w-full">
+        <div className="flex gap-4 w-full">
+          <button
+            type="button"
+            disabled={countdown > 0 || resending}
+            onClick={handleResendClick}
+            className={cn(
+              "flex-1 rounded-lg border py-2.5 text-center text-xs font-bold transition-all cursor-pointer min-h-[44px]",
+              countdown > 0
+                ? "bg-slate-50 text-slate-400 border-slate-100 cursor-not-allowed"
+                : "border-slate-200 text-slate-700 hover:bg-slate-50"
+            )}
+          >
+            {countdown > 0 ? `Resend in ${countdown}s` : resending ? "Sending..." : "Retry verification email"}
+          </button>
+          <button
+            type="button"
+            onClick={onSignIn}
+            className="flex-1 rounded-lg bg-indigo-600 text-white py-2.5 text-center text-xs font-bold hover:bg-indigo-700 transition-all cursor-pointer min-h-[44px]"
+          >
+            Sign In
+          </button>
+        </div>
+        
+        {verificationState === "EMAIL_DELIVERY_FAILED" && (
+          <a
+            href="mailto:support@example.com?subject=AppOS%20Email%20Verification%20Support"
+            className="text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors text-center underline cursor-pointer"
+          >
+            Contact Support
+          </a>
+        )}
       </div>
       {statusText && (
         <p className="text-[11px] font-medium text-indigo-600 mt-1 select-none animate-fade-in">
@@ -196,13 +218,19 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
+  const [verificationState, setVerificationState] = useState<
+    "ACCOUNT_CREATED_EMAIL_ACCEPTED" | "EMAIL_DELIVERY_FAILED" | "EMAIL_RATE_LIMITED" | "EMAIL_ALREADY_VERIFIED" | null
+  >(null);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [googleState, setGoogleState] = useState<"default" | "launching" | "redirecting" | "popup_blocked" | "failed">("default");
 
   // Detect iframe or sandbox preview
   useEffect(() => {
     const isIframe = window.self !== window.top;
-    if (isIframe) {
+    const isNonCanonical = window.location.hostname !== "appos-ten.vercel.app" &&
+      window.location.hostname !== "localhost" &&
+      window.location.hostname !== "127.0.0.1";
+    if (isIframe || isNonCanonical) {
       setIsPreviewMode(true);
     }
   }, []);
@@ -234,6 +262,13 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
     if (token) {
       setResetToken(token);
       setMode("reset-password");
+    }
+
+    const verified = params.get("verified");
+    if (verified === "true") {
+      setErrors({ general: "Email verified successfully. Sign in to continue." });
+    } else if (verified === "false") {
+      setErrors({ general: "This verification link is invalid or has expired. Request a new link." });
     }
 
     const conflictEmail = params.get("conflict_email");
@@ -434,9 +469,15 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
 
         if (response.success) {
           setIsSuccess(true);
+          setVerificationState("ACCOUNT_CREATED_EMAIL_ACCEPTED");
           setSuccessMsg(response.message);
         } else {
-          setErrors({ general: translateError(response.message) });
+          if (response.message === "EMAIL_DELIVERY_FAILED") {
+            setIsSuccess(true);
+            setVerificationState("EMAIL_DELIVERY_FAILED");
+          } else {
+            setErrors({ general: translateError(response.message) });
+          }
         }
       }
     } catch (err) {
@@ -485,18 +526,44 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
     }
   };
 
-  const handleResendVerification = async () => {
+  const handleResendVerification = async (): Promise<boolean> => {
     if (!email) {
       setErrors({ general: "Please enter your email to resend verification link." });
-      return;
+      return false;
     }
     setIsLoading(true);
     setErrors({});
     try {
-      const res = await authService.resendVerification(email);
-      setErrors({ general: translateError(res.message) });
-    } catch (err) {
-      setErrors({ general: translateError(err) });
+      const res = await authClient.sendVerificationEmail({
+        email,
+        callbackURL: `${window.location.origin}/login?verified=true`
+      });
+
+      if (res && res.error) {
+        console.error("sendVerificationEmail error response:", res.error);
+        const errMessage = res.error.message || "";
+        const errLower = errMessage.toLowerCase();
+
+        if (errLower.includes("rate") || errLower.includes("too many requests") || res.error.status === 429) {
+          setVerificationState("EMAIL_RATE_LIMITED");
+          setErrors({ general: "Please wait before requesting another verification email." });
+        } else if (errLower.includes("already verified") || errLower.includes("already_verified")) {
+          setVerificationState("EMAIL_ALREADY_VERIFIED");
+          setErrors({ general: "Your email is already verified. Sign in to continue." });
+        } else {
+          setVerificationState("EMAIL_DELIVERY_FAILED");
+          setErrors({ general: "We couldn’t send the verification email. Please try again." });
+        }
+        return false;
+      }
+
+      setVerificationState("ACCOUNT_CREATED_EMAIL_ACCEPTED");
+      return true;
+    } catch (err: any) {
+      console.error("sendVerificationEmail exception:", err);
+      setVerificationState("EMAIL_DELIVERY_FAILED");
+      setErrors({ general: "We couldn’t send the verification email. Please try again." });
+      return false;
     } finally {
       setIsLoading(false);
     }
@@ -530,7 +597,51 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
         </button>
       )}
 
-      {!isSuccess ? (
+      {isPreviewMode ? (
+        <div className="flex flex-col text-left py-4 animate-fade-in w-full select-none">
+          <div className="h-12 w-12 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center mb-6 shadow-sm">
+            <ShieldCheck className="h-6 w-6" />
+          </div>
+          <h2 className="font-display text-2xl font-extrabold tracking-tight text-brand-dark mb-3">
+            Secure Authentication Guard
+          </h2>
+          <p className="text-sm text-brand-text-secondary leading-relaxed mb-6">
+            This preview cannot securely complete account authentication. Open the deployed AppOS application to continue.
+          </p>
+          <div className="space-y-3 w-full">
+            {mode === "login" ? (
+              <a
+                href={`${process.env.NEXT_PUBLIC_APP_URL || "https://appos-ten.vercel.app"}/login`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center w-full rounded-lg bg-indigo-600 text-white py-3 text-center text-sm font-bold hover:bg-indigo-700 transition-all cursor-pointer min-h-[44px]"
+              >
+                Open AppOS Sign-In
+              </a>
+            ) : (
+              <a
+                href={`${process.env.NEXT_PUBLIC_APP_URL || "https://appos-ten.vercel.app"}/signup`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center w-full rounded-lg bg-indigo-600 text-white py-3 text-center text-sm font-bold hover:bg-indigo-700 transition-all cursor-pointer min-h-[44px]"
+              >
+                Open AppOS Create Account
+              </a>
+            )}
+            
+            <button
+              type="button"
+              onClick={() => {
+                setMode(mode === "login" ? "signup" : "login");
+                setErrors({});
+              }}
+              className="w-full text-center text-xs font-semibold text-slate-500 hover:text-indigo-600 transition-colors mt-2 cursor-pointer bg-transparent border-0 py-1"
+            >
+              {mode === "login" ? "Need to create an account? Sign up" : "Already have an account? Sign in"}
+            </button>
+          </div>
+        </div>
+      ) : !isSuccess ? (
         <div className="flex flex-col text-left">
           {mode !== "signup" && mode !== "login" && (
             <button
@@ -563,7 +674,12 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
           </p>
 
           {errors.general && (
-            <div className="mb-5 p-3.5 bg-rose-50 border border-rose-100 rounded-lg text-xs font-medium text-rose-600">
+            <div className={cn(
+              "mb-5 p-3.5 rounded-lg text-xs font-medium",
+              errors.general.includes("successfully") || errors.general.includes("verified")
+                ? "bg-emerald-50 border border-emerald-100 text-emerald-600"
+                : "bg-rose-50 border border-rose-100 text-rose-600"
+            )}>
               <div>{errors.general}</div>
               {mode === "login" && errors.general === "We couldn’t sign you in with those details. Check your email and password, or create an account." && (
                 <div className="mt-2.5 flex items-center gap-3 border-t border-rose-100 pt-2 text-[11px]">
@@ -807,13 +923,24 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
       ) : (
         /* SUCCESS SCREEN */
         <div className="flex flex-col items-center justify-center text-center py-6 select-none animate-fade-in w-full">
-          <div className="h-16 w-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-6 border border-emerald-100 shadow-sm">
-            <CheckCircle2 className="h-9 w-9 stroke-[2.2]" />
+          <div className={cn(
+            "h-16 w-16 rounded-full flex items-center justify-center mb-6 border shadow-sm",
+            mode === "signup" && verificationState === "EMAIL_DELIVERY_FAILED"
+              ? "bg-rose-50 text-rose-500 border-rose-100"
+              : "bg-emerald-50 text-emerald-500 border-emerald-100"
+          )}>
+            {mode === "signup" && verificationState === "EMAIL_DELIVERY_FAILED" ? (
+              <XCircle className="h-9 w-9 stroke-[2.2]" />
+            ) : (
+              <CheckCircle2 className="h-9 w-9 stroke-[2.2]" />
+            )}
           </div>
           
           <h3 className="font-display text-2.5xl font-extrabold text-brand-dark mb-3">
             {mode === "login" && "Authentication Successful"}
-            {mode === "signup" && "Verify your email"}
+            {mode === "signup" && (
+              verificationState === "EMAIL_DELIVERY_FAILED" ? "Your account was created" : "Verify your email"
+            )}
             {mode === "forgot-password" && "Reset link sent"}
             {mode === "reset-password" && "Password changed"}
             {mode === "link-conflict" && "Linking Complete!"}
@@ -821,7 +948,15 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
           
           <p className="text-sm text-brand-text-secondary leading-relaxed max-w-sm mb-8">
             {mode === "forgot-password" && "We sent a secure link to your inbox. Click the link to create a new password."}
-            {mode === "signup" && "We sent an activation link to your email address. Please click the link to confirm your account and open your workspace."}
+            {mode === "signup" && (
+              verificationState === "EMAIL_DELIVERY_FAILED" ? (
+                "We couldn’t send the verification email. Please try again."
+              ) : verificationState === "EMAIL_RATE_LIMITED" ? (
+                "Please wait before requesting another verification email."
+              ) : (
+                "We sent a verification link to your email address. Check your inbox and spam folder."
+              )
+            )}
             {mode === "reset-password" && "Your new password is now active. You can now securely access your AppOS console."}
             {mode !== "forgot-password" && mode !== "signup" && mode !== "reset-password" && (successMsg || "Your request has been successfully processed.")}
           </p>
@@ -861,6 +996,8 @@ export default function SignupPage({ onBackToHome, onSignupSuccess, initialMode 
                   setPassword("");
                   setErrors({});
                 }}
+                verificationState={verificationState}
+                setVerificationState={setVerificationState}
               />
             ) : mode === "reset-password" ? (
               <div className="w-full">

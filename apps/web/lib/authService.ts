@@ -56,7 +56,8 @@ function handleError(err: any): AuthResponse {
     lower.includes("invalid email or password") ||
     lower.includes("authentication failed") ||
     lower.includes("invalid email") ||
-    lower.includes("credential")
+    lower.includes("credential") ||
+    lower.includes("user not found")
   ) {
     return {
       success: false,
@@ -112,6 +113,19 @@ BETTER_AUTH: Initiating registration flow`);
 ERROR TYPE: ${error.status || "signUpError"}
 ERROR MESSAGE: ${error.message || "Could not complete signup. Please try again."}`);
 
+        const errMsg = error.message || "";
+        if (
+          errMsg.includes("EMAIL_PROVIDER") ||
+          errMsg.includes("delivery") ||
+          errMsg.includes("provider") ||
+          errMsg.includes("Resend")
+        ) {
+          return {
+            success: false,
+            message: "EMAIL_DELIVERY_FAILED"
+          };
+        }
+
         return handleError({ message: error.message || "Could not complete signup. Please try again." });
       }
 
@@ -129,6 +143,18 @@ SESSION CREATED: Active session pending verification`);
       console.error(`[AUTH CLIENT] AUTH SIGNUP FAILURE
 ERROR TYPE: Exception
 ERROR MESSAGE: ${err.message || String(err)}`);
+      const errMsg = err?.message || "";
+      if (
+        errMsg.includes("EMAIL_PROVIDER") ||
+        errMsg.includes("delivery") ||
+        errMsg.includes("provider") ||
+        errMsg.includes("Resend")
+      ) {
+        return {
+          success: false,
+          message: "EMAIL_DELIVERY_FAILED"
+        };
+      }
       return handleError(err);
     }
   },

@@ -1,7 +1,15 @@
 import { Resend } from "resend";
 
+export class EmailDeliveryError extends Error {
+  constructor(public code: string, message: string) {
+    super(message);
+    this.name = "EmailDeliveryError";
+  }
+}
+
 const isProduction = process.env.NODE_ENV === "production";
 
+// Validate environment variables on file load
 if (isProduction) {
   if (!process.env.RESEND_API_KEY) {
     throw new Error(
@@ -13,6 +21,19 @@ if (isProduction) {
       "FATAL CONFIGURATION ERROR: EMAIL_FROM is required in production environments! Email service startup aborted."
     );
   }
+  if (process.env.EMAIL_FROM.includes("onboarding@resend.dev")) {
+    throw new Error(
+      "FATAL CONFIGURATION ERROR: EMAIL_FROM cannot be onboarding@resend.dev in production! Onboarding domain is restricted to sandbox testing only."
+    );
+  }
+}
+
+export function maskEmail(email: string): string {
+  const parts = email.split("@");
+  if (parts.length !== 2) return "***";
+  const [local, domain] = parts;
+  if (local.length <= 1) return `${local}***@${domain}`;
+  return `${local[0]}***@${domain}`;
 }
 
 const getResend = () => {
@@ -33,6 +54,13 @@ export async function sendVerificationEmail({ email, url }: { email: string; url
   
   if (isProduction && !process.env.EMAIL_FROM) {
     throw new Error("FATAL CONFIGURATION ERROR: EMAIL_FROM is missing in production.");
+  }
+
+  if (isProduction && from.includes("onboarding@resend.dev")) {
+    throw new EmailDeliveryError(
+      "SANDBOX_RESTRICTION",
+      "onboarding@resend.dev cannot be treated as unrestricted production delivery."
+    );
   }
   
   const html = `
@@ -55,47 +83,76 @@ export async function sendVerificationEmail({ email, url }: { email: string; url
       <hr style="border: 0; border-top: 1px solid #f3f4f6; margin: 32px 0;" />
       <p style="color: #9ca3af; font-size: 11px; line-height: 16px; text-align: center;">
         If you have trouble clicking the button, copy and paste this URL into your browser:<br />
-        <a href="${url}" style="color: #4f46e5; text-decoration: none; word-break: break-all;">${url}</a>
+        Please check your verification link in your secure account area.
       </p>
     </div>
   `;
 
   if (resend) {
-    try {
-      console.log(`
-[RESEND SANDBOX DIAGNOSTIC WARNING]
-=========================================
-TARGET RECIPIENT EMAIL: ${email}
-SENDER ADDRESS: ${from}
-RESEND API EXECUTION STARTING FOR: "Verify your AppOS email"
-NOTE: If using the Resend Sandbox (onboarding@resend.dev), emails will ONLY be delivered to the registered Resend account owner. All other recipient addresses will be silently dropped by Resend after acceptance until a custom domain is verified.
-=========================================
-`);
-      console.log(`[Resend Diagnostics] INVOKING RESEND API. Recipient: ${email}. From: ${from}. Subject: "Verify your AppOS email". Full String Payload:`, {
-        from,
-        to: email,
-        subject: "Verify your AppOS email",
-        html
-      });
-      const response = await resend.emails.send({
-        from,
-        to: email,
-        subject: "Verify your AppOS email",
-        html,
-      });
-      console.log(`[Resend] Verification email successfully dispatched to ${email}`, response);
-      return { success: true, id: response.data?.id };
-    } catch (err: any) {
-      console.error(`[Resend] Failed to send verification email to ${email}:`, err);
-      return { success: false, error: err.message || String(err) };
+    // Record sandbox warn if onboarding@resend.dev is used
+    if (from.includes("onboarding@resend.dev")) {
+      console.warn(`[Resend Sandbox Warning] SENDER: ${from} | RECIPIENT: ${maskEmail(email)}. Delivery restricted to sandbox registered owners.`);
     }
+
+    // Safe, non-sensitive start log
+    console.log(JSON.stringify({
+      event: "verification_email_sending",
+      provider: "resend",
+      recipient: maskEmail(email),
+      timestamp: new Date().toISOString()
+    }));
+
+    const response = await resend.emails.send({
+      from,
+      to: email,
+      subject: "Verify your AppOS email",
+      html,
+    });
+
+    const { data, error } = response;
+
+    if (error) {
+      console.error("[Resend Error Safe Log] Provider rejected email delivery:", {
+        error: error.message || String(error),
+        recipient: maskEmail(email),
+        timestamp: new Date().toISOString()
+      });
+
+      throw new EmailDeliveryError(
+        "EMAIL_PROVIDER_REJECTED",
+        error.message || "Email delivery failed due to provider rejection"
+      );
+    }
+
+    if (!data?.id) {
+      console.error("[Resend Error Safe Log] Provider did not return a message ID:", {
+        recipient: maskEmail(email),
+        timestamp: new Date().toISOString()
+      });
+      throw new EmailDeliveryError(
+        "EMAIL_PROVIDER_NO_MESSAGE_ID",
+        "The email provider returned no message identifier."
+      );
+    }
+
+    // Safe production logging
+    console.log(JSON.stringify({
+      event: "verification_email_accepted",
+      provider: "resend",
+      messageId: data.id,
+      recipient: maskEmail(email),
+      status: "accepted",
+      timestamp: new Date().toISOString()
+    }));
+
+    return { success: true, id: data.id, deliveryMode: "live" };
   } else {
+    // Development mock
     console.log(`\n================ [MOCK Verification EMAIL] ================`);
-    console.log(`To:      ${email}`);
+    console.log(`To:      ${maskEmail(email)}`);
     console.log(`Subject: Verify your AppOS email`);
-    console.log(`Link:    ${url}`);
     console.log(`========================================================\n`);
-    return { success: true, mocked: true };
+    return { success: true, mocked: true, deliveryMode: "mock" };
   }
 }
 
@@ -105,6 +162,13 @@ export async function sendResetPasswordEmail({ email, url }: { email: string; ur
   
   if (isProduction && !process.env.EMAIL_FROM) {
     throw new Error("FATAL CONFIGURATION ERROR: EMAIL_FROM is missing in production.");
+  }
+
+  if (isProduction && from.includes("onboarding@resend.dev")) {
+    throw new EmailDeliveryError(
+      "SANDBOX_RESTRICTION",
+      "onboarding@resend.dev cannot be treated as unrestricted production delivery."
+    );
   }
   
   const html = `
@@ -124,49 +188,71 @@ export async function sendResetPasswordEmail({ email, url }: { email: string; ur
       <p style="color: #6b7280; font-size: 13px; line-height: 20px; text-align: center; margin-bottom: 0;">
         This password reset link is only valid for a short time. If you did not make this request, you can safely ignore this email.
       </p>
-      <hr style="border: 0; border-top: 1px solid #f3f4f6; margin: 32px 0;" />
-      <p style="color: #9ca3af; font-size: 11px; line-height: 16px; text-align: center;">
-        If you have trouble clicking the button, copy and paste this URL into your browser:<br />
-        <a href="${url}" style="color: #4f46e5; text-decoration: none; word-break: break-all;">${url}</a>
-      </p>
     </div>
   `;
 
   if (resend) {
-    try {
-      console.log(`
-[RESEND SANDBOX DIAGNOSTIC WARNING]
-=========================================
-TARGET RECIPIENT EMAIL: ${email}
-SENDER ADDRESS: ${from}
-RESEND API EXECUTION STARTING FOR: "Reset your AppOS password"
-NOTE: If using the Resend Sandbox (onboarding@resend.dev), emails will ONLY be delivered to the registered Resend account owner. All other recipient addresses will be silently dropped by Resend after acceptance until a custom domain is verified.
-=========================================
-`);
-      console.log(`[Resend Diagnostics] INVOKING RESEND API. Recipient: ${email}. From: ${from}. Subject: "Reset your AppOS password". Full String Payload:`, {
-        from,
-        to: email,
-        subject: "Reset your AppOS password",
-        html
-      });
-      const response = await resend.emails.send({
-        from,
-        to: email,
-        subject: "Reset your AppOS password",
-        html,
-      });
-      console.log(`[Resend] Password-reset email successfully dispatched to ${email}`, response);
-      return { success: true, id: response.data?.id };
-    } catch (err: any) {
-      console.error(`[Resend] Failed to send password reset email to ${email}:`, err);
-      return { success: false, error: err.message || String(err) };
+    if (from.includes("onboarding@resend.dev")) {
+      console.warn(`[Resend Sandbox Warning] SENDER: ${from} | RECIPIENT: ${maskEmail(email)}. Delivery restricted to sandbox registered owners.`);
     }
+
+    // Safe, non-sensitive start log
+    console.log(JSON.stringify({
+      event: "reset_password_email_sending",
+      provider: "resend",
+      recipient: maskEmail(email),
+      timestamp: new Date().toISOString()
+    }));
+
+    const response = await resend.emails.send({
+      from,
+      to: email,
+      subject: "Reset your AppOS password",
+      html,
+    });
+
+    const { data, error } = response;
+
+    if (error) {
+      console.error("[Resend Error Safe Log] Provider rejected password reset delivery:", {
+        error: error.message || String(error),
+        recipient: maskEmail(email),
+        timestamp: new Date().toISOString()
+      });
+      throw new EmailDeliveryError(
+        "EMAIL_PROVIDER_REJECTED",
+        error.message || "Password reset delivery failed due to provider rejection"
+      );
+    }
+
+    if (!data?.id) {
+      console.error("[Resend Error Safe Log] Provider did not return a message ID for password reset:", {
+        recipient: maskEmail(email),
+        timestamp: new Date().toISOString()
+      });
+      throw new EmailDeliveryError(
+        "EMAIL_PROVIDER_NO_MESSAGE_ID",
+        "The email provider returned no message identifier."
+      );
+    }
+
+    // Safe production logging
+    console.log(JSON.stringify({
+      event: "reset_password_email_accepted",
+      provider: "resend",
+      messageId: data.id,
+      recipient: maskEmail(email),
+      status: "accepted",
+      timestamp: new Date().toISOString()
+    }));
+
+    return { success: true, id: data.id, deliveryMode: "live" };
   } else {
+    // Development mock
     console.log(`\n================ [MOCK Reset Password EMAIL] ================`);
-    console.log(`To:      ${email}`);
+    console.log(`To:      ${maskEmail(email)}`);
     console.log(`Subject: Reset your AppOS password`);
-    console.log(`Link:    ${url}`);
     console.log(`==========================================================\n`);
-    return { success: true, mocked: true };
+    return { success: true, mocked: true, deliveryMode: "mock" };
   }
 }

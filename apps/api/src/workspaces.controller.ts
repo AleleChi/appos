@@ -23,6 +23,8 @@ export class WorkspacesController {
 
     const name = sanitizeInput(body.name);
     const industry = sanitizeInput(body.industry);
+    const account_type = sanitizeInput(body.account_type);
+    const team_size = sanitizeInput(body.team_size);
 
     if (!name || name.length < 2 || name.length > 100) {
       throw new BadRequestException({
@@ -34,8 +36,41 @@ export class WorkspacesController {
       });
     }
 
+    const validIndustries = ["ecommerce", "technology", "finance", "education"];
+    if (!industry || !validIndustries.includes(industry)) {
+      throw new BadRequestException({
+        error: {
+          code: "VALIDATION_FAILED",
+          message: "Please select a valid industry option.",
+          requestId: crypto.randomUUID()
+        }
+      });
+    }
+
+    const validAccountTypes = ["business", "agency", "developer", "enterprise"];
+    if (!account_type || !validAccountTypes.includes(account_type)) {
+      throw new BadRequestException({
+        error: {
+          code: "VALIDATION_FAILED",
+          message: "Please select a valid account type option.",
+          requestId: crypto.randomUUID()
+        }
+      });
+    }
+
+    const validTeamSizes = ["Just me (1)", "2-9 members", "10-49 members", "50+ members"];
+    if (!team_size || !validTeamSizes.includes(team_size)) {
+      throw new BadRequestException({
+        error: {
+          code: "VALIDATION_FAILED",
+          message: "Please select a valid team size option.",
+          requestId: crypto.randomUUID()
+        }
+      });
+    }
+
     const cleanName = sanitizeInput(name);
-    const cleanIndustry = industry ? sanitizeInput(industry) : null;
+    const cleanIndustry = sanitizeInput(industry);
     const workspaceId = `ws_${crypto.randomUUID().substring(0, 8)}`;
     const memberId = `wsm_${crypto.randomUUID().substring(0, 8)}`;
     const auditId = `aud_${crypto.randomUUID().substring(0, 8)}`;

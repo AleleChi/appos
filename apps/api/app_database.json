@@ -1,0 +1,14 @@
+{
+  "user": [],
+  "session": [],
+  "account": [],
+  "accounts": [],
+  "verification": [],
+  "workspaces": [],
+  "workspace_members": [],
+  "applications": [],
+  "assets": [],
+  "auth_handoff_codes": [],
+  "password_reset_tokens": [],
+  "audit_logs": []
+}

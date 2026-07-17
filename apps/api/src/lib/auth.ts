@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { verifyPassword } from "better-auth/crypto";
 import bcrypt from "bcryptjs";
+import { eq } from "drizzle-orm";
 import { sendVerificationEmail, sendResetPasswordEmail } from "./auth-emails";
 import { drizzleDb } from "./db-client";
 import * as schema from "../../../../src/db/schema";
@@ -52,8 +53,24 @@ export const auth = betterAuth({
   
   trustedOrigins: trustedOrigins,
   
+  emailVerification: {
+    sendOnSignUp: true,
+    sendOnSignIn: true,
+    autoSignInAfterVerification: false,
+    expiresIn: 86400,
+    sendVerificationEmail: async ({ user, url, token }) => {
+      await sendVerificationEmail({
+        email: user.email,
+        url
+      });
+    }
+  },
+  
   emailAndPassword: {
     enabled: true,
+    requireEmailVerification: true,
+    minPasswordLength: 12,
+    autoSignIn: false,
     password: {
       verify: async ({ password, hash }) => {
         console.log(`[Better Auth Custom Verify] Initiating password verification. Password length: ${password?.length}`);
@@ -80,9 +97,6 @@ export const auth = betterAuth({
           return false;
         }
       }
-    },
-    sendVerificationEmail: async ({ user, url }: { user: any; url: string }) => {
-      await sendVerificationEmail({ email: user.email, url });
     },
     sendResetPassword: async ({ user, url }: { user: any; url: string }) => {
       await sendResetPasswordEmail({ email: user.email, url });

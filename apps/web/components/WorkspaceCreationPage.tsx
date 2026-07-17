@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import Swal from "sweetalert2";
 import { getApiUrl } from "../lib/api-config";
+import { authService } from "../lib/authService";
 
 // Inline vector icon components to ensure cross-platform brand alignment
 const GridIcon = () => (
@@ -74,6 +75,31 @@ export default function WorkspaceCreationPage({ onWorkspaceCreated, onBackToHome
     setLoading(true);
     setError("");
 
+    // 1. Client-Side Validations
+    if (!formData.name || formData.name.trim().length < 2 || formData.name.trim().length > 100) {
+      setError("Workspace name must be between 2 and 100 characters.");
+      setLoading(false);
+      return;
+    }
+    const validIndustries = ["ecommerce", "technology", "finance", "education"];
+    if (!formData.industry || !validIndustries.includes(formData.industry)) {
+      setError("Please select a valid industry from the options provided.");
+      setLoading(false);
+      return;
+    }
+    const validAccountTypes = ["business", "agency", "developer", "enterprise"];
+    if (!formData.accountType || !validAccountTypes.includes(formData.accountType)) {
+      setError("Please select a valid account type.");
+      setLoading(false);
+      return;
+    }
+    const validTeamSizes = ["Just me (1)", "2-9 members", "10-49 members", "50+ members"];
+    if (!formData.teamSize || !validTeamSizes.includes(formData.teamSize)) {
+      setError("Please select a valid team size option.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const targetUrl = getApiUrl("/api/workspaces");
 
@@ -84,7 +110,7 @@ export default function WorkspaceCreationPage({ onWorkspaceCreated, onBackToHome
         },
         credentials: "include",
         body: JSON.stringify({
-          name: formData.name,
+          name: formData.name.trim(),
           industry: formData.industry,
           account_type: formData.accountType,
           team_size: formData.teamSize
@@ -100,12 +126,19 @@ export default function WorkspaceCreationPage({ onWorkspaceCreated, onBackToHome
       }
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Failed to create workspace");
+      if (!response.ok) {
+        const errorMsg = data.error?.message || data.error || "Failed to create workspace";
+        throw new Error(errorMsg);
+      }
       
+      const workspaceObj = data.workspace || {};
+      const actualWorkspaceName = workspaceObj.name || formData.name;
+      const actualWorkspaceId = workspaceObj.id || data.workspaceId;
+
       // 2. High-Fidelity SweetAlert2 Confirmation Popup matching Stitch brand tones
       Swal.fire({
         title: "Workspace Created!",
-        text: `Your workspace "${data.name}" was built successfully. Let's set up your mobile experience next!`,
+        text: `Your workspace "${actualWorkspaceName}" was built successfully. Let's set up your mobile experience next!`,
         icon: "success",
         confirmButtonColor: "#5046E6", // Indigo core brand color token
         confirmButtonText: "Continue",
@@ -117,7 +150,13 @@ export default function WorkspaceCreationPage({ onWorkspaceCreated, onBackToHome
         }
       }).then(() => {
         // 3. Perfect Route Transition: Forward direct to Step 1 Connect Website Flow
-        navigate(`/workspace/${data.workspaceId}/connect`);
+        if (onWorkspaceCreated && actualWorkspaceId) {
+          onWorkspaceCreated(actualWorkspaceId);
+        } else if (actualWorkspaceId) {
+          navigate(`/workspace/${actualWorkspaceId}/connect`);
+        } else {
+          navigate(`/dashboard`);
+        }
       });
 
     } catch (err: any) {
@@ -391,6 +430,23 @@ export default function WorkspaceCreationPage({ onWorkspaceCreated, onBackToHome
             </div>
             
           </form>
+
+          <div className="mt-8 text-center">
+            <button
+              type="button"
+              onClick={async () => {
+                await authService.logout();
+                if (onBackToHome) {
+                  onBackToHome();
+                } else {
+                  navigate("/");
+                }
+              }}
+              className="text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer bg-transparent border-0 outline-none"
+            >
+              Sign Out & Exit Setup
+            </button>
+          </div>
         </div>
       </div>
     </div>
