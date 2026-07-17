@@ -1,14 +1,20 @@
 import { Router } from "express";
-import { auth } from "./_lib/auth";
 import { Pool } from "pg";
+import { auth } from "./_lib/auth";
+import { fromNodeHeaders } from "better-auth/node"; // CRITICAL: Better Auth headers adapter
 
-const router = Router();
-const pool = new Pool({
+if (!process.env.DATABASE_URL) {
+  throw new Error("FATAL CONFIG: DATABASE_URL environment variable is missing.");
+}
+
+const pool = new Pool({ 
   connectionString: process.env.DATABASE_URL,
   max: 10,
   idleTimeoutMillis: 30000,
-  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false
 });
+
+const router = Router();
 
 // Helper to strip HTML tags to prevent XSS attacks
 const sanitizeInput = (val: string): string => {
@@ -17,36 +23,24 @@ const sanitizeInput = (val: string): string => {
 };
 
 router.post("/workspaces", async (req, res) => {
-  // Try to parse headers to Headers class for better-auth
-  const headers = new Headers();
-  for (const [key, val] of Object.entries(req.headers)) {
-    if (Array.isArray(val)) {
-      val.forEach(v => headers.append(key, v));
-    } else if (val !== undefined) {
-      headers.set(key, val);
-    }
-  }
-
-  const session = await auth.api.getSession({ headers });
+  // CRITICAL: Wrap req.headers with fromNodeHeaders so getSession can parse cookies/bearer tokens
+  const session = await auth.api.getSession({ 
+    headers: fromNodeHeaders(req.headers) 
+  });
+  
   if (!session || !session.user) {
     return res.status(401).json({ error: "Unauthorized access: Missing or invalid session credentials" });
   }
 
-  const rawName = req.body.name;
-  const rawIndustry = req.body.industry;
+  const name = sanitizeInput(req.body.name);
+  const industry = sanitizeInput(req.body.industry);
   const rawAccountType = req.body.account_type;
   const rawTeamSize = req.body.team_size;
 
-  // 1. Strict Sanitization
-  const name = sanitizeInput(rawName);
-  const industry = sanitizeInput(rawIndustry);
-  
-  // 2. Input Length Validation
   if (!name || name.length < 2 || name.length > 100) {
     return res.status(400).json({ error: "Workspace name must be between 2 and 100 characters long" });
   }
 
-  // 3. Strict Enum Validation
   const allowedAccountTypes = ["business", "agency", "developer", "enterprise"];
   const account_type = allowedAccountTypes.includes(rawAccountType) ? rawAccountType : "business";
 
@@ -57,10 +51,9 @@ router.post("/workspaces", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // Secure parameterized insertion to prevent SQL Injection
     const workspaceQuery = `
-      INSERT INTO workspaces (id, name, industry, account_type, team_size, created_at, updated_at)
-      VALUES (gen_random_uuid(), $1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      INSERT INTO workspaces (name, industry, account_type, team_size)
+      VALUES ($1, $2, $3, $4)
       RETURNING id
     `;
     const workspaceResult = await client.query(workspaceQuery, [
@@ -71,10 +64,9 @@ router.post("/workspaces", async (req, res) => {
     ]);
     const workspaceId = workspaceResult.rows[0].id;
 
-    // Link current user as Owner
     const memberQuery = `
-      INSERT INTO workspace_members (workspace_id, user_id, role, joined_at)
-      VALUES ($1, $2, 'owner', CURRENT_TIMESTAMP)
+      INSERT INTO workspace_members (workspace_id, user_id, role)
+      VALUES ($1, $2, 'owner')
     `;
     await client.query(memberQuery, [workspaceId, session.user.id]);
 
@@ -82,47 +74,37 @@ router.post("/workspaces", async (req, res) => {
     res.status(201).json({ workspaceId, name });
   } catch (error: any) {
     await client.query("ROLLBACK");
-    console.error("DEBUG: Workspace creation failed inside transaction:", error);
-    res.status(500).json({ error: "Internal database server error", message: error.message });
+    console.error("Workspace creation failure:", error);
+    res.status(500).json({ error: "Internal server error", message: error.message });
   } finally {
     client.release();
   }
 });
 
-router.get("/auth/status", async (req, res) => {
-  const headers = new Headers();
-  for (const [key, val] of Object.entries(req.headers)) {
-    if (Array.isArray(val)) {
-      val.forEach(v => headers.append(key, v));
-    } else if (val !== undefined) {
-      headers.set(key, val);
-    }
-  }
+// GET /api/workspaces endpoint for Route Guard verification
+router.get("/workspaces", async (req, res) => {
+  const session = await auth.api.getSession({ 
+    headers: fromNodeHeaders(req.headers) 
+  });
 
-  const session = await auth.api.getSession({ headers });
   if (!session || !session.user) {
-    return res.status(401).json({ error: "Unauthorized" });
+    return res.status(401).json({ error: "Unauthorized access" });
   }
 
+  const client = await pool.connect();
   try {
-    // Check if user has any workspaces
     const query = `
-      SELECT w.id, w.name, wm.role 
-      FROM workspaces w
-      JOIN workspace_members wm ON w.id = wm.workspace_id
+      SELECT w.* FROM workspaces w
+      JOIN workspace_members wm ON wm.workspace_id = w.id
       WHERE wm.user_id = $1
-      ORDER BY w.created_at DESC
     `;
-    const result = await pool.query(query, [session.user.id]);
-
-    res.status(200).json({
-      authenticated: true,
-      user: session.user,
-      workspaces: result.rows
-    });
+    const result = await client.query(query, [session.user.id]);
+    res.json(result.rows);
   } catch (error: any) {
-    console.error("Auth status query failure:", error);
-    res.status(500).json({ error: "Database lookup failed" });
+    console.error("Fetch workspaces failure:", error);
+    res.status(500).json({ error: "Internal server error" });
+  } finally {
+    client.release();
   }
 });
 

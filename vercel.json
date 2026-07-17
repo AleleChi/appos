@@ -1,21 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [
-    {
-      "source": "/api/v1/:path*",
-      "destination": "https://appos.onrender.com/api/v1/:path*"
-    },
-    {
-      "source": "/api/auth/:path*",
-      "destination": "https://appos.onrender.com/api/auth/:path*"
-    },
-    {
-      "source": "/api/health",
-      "destination": "https://appos.onrender.com/api/health"
-    },
-    {
-      "source": "/((?!api/).*)",
-      "destination": "/index.html"
-    }
-  ]
+  "cleanUrls": true
 }

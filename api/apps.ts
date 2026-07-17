@@ -1,13 +1,22 @@
 import { Router } from "express";
 import { auth } from "./_lib/auth";
 import { Pool } from "pg";
+import { fromNodeHeaders } from "better-auth/node";
+
+if (!process.env.DATABASE_URL) {
+  throw new Error(
+    "FATAL DATABASE CONFIGURATION ERROR: 'DATABASE_URL' environment variable is missing. " +
+    "Verify environment variables in your Render service dashboard."
+  );
+}
 
 const router = Router();
-const pool = new Pool({
+// Instantiate database pool safely
+const pool = new Pool({ 
   connectionString: process.env.DATABASE_URL,
   max: 10,
   idleTimeoutMillis: 30000,
-  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false
 });
 
 // Mock deep scanner background job
@@ -31,16 +40,9 @@ const runBackgroundAnalysis = async (appId: string) => {
 };
 
 router.post("/api/apps/analyze", async (req, res) => {
-  const headers = new Headers();
-  for (const [key, val] of Object.entries(req.headers)) {
-    if (Array.isArray(val)) {
-      val.forEach(v => headers.append(key, v));
-    } else if (val !== undefined) {
-      headers.set(key, val);
-    }
-  }
-
-  const session = await auth.api.getSession({ headers });
+  const session = await auth.api.getSession({ 
+    headers: fromNodeHeaders(req.headers) 
+  });
   if (!session || !session.user) return res.status(401).json({ error: "Unauthorized" });
 
   const { url, workspace_id } = req.body;

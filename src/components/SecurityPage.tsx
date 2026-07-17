@@ -365,7 +365,7 @@ export default function SecurityPage({ onGetStarted }: SecurityPageProps) {
                       { name: "Domain Verification", status: "Ownership Validated" },
                       { name: "Dependency Scanning", status: "0 Critical Issues Found" },
                       { name: "App Permissions", status: "Minimal Footprint" },
-                      { name: "Privacy Compliance", status: "SOC2 & GDPR Perfect Alignment" }
+                      { name: "Privacy Compliance", status: "Security-first & GDPR Perfect Alignment" }
                     ].map((item, idx) => (
                       <div key={idx} className="flex justify-between items-center text-xs pb-3 border-b border-slate-50 last:border-0 last:pb-0">
                         <span className="text-brand-text-secondary font-medium">{item.name}</span>
@@ -688,7 +688,7 @@ export default function SecurityPage({ onGetStarted }: SecurityPageProps) {
             <div className="rounded-xl border border-slate-200 bg-white p-5 flex flex-col items-center justify-center text-center">
               <ShieldCheck className="h-5.5 w-5.5 text-brand-primary mb-2.5" />
               <h4 className="text-xs font-black text-brand-dark leading-none">Privacy</h4>
-              <p className="text-[10px] text-brand-text-secondary mt-1.5 leading-normal font-medium">SOC2 & GDPR ready</p>
+              <p className="text-[10px] text-brand-text-secondary mt-1.5 leading-normal font-medium">Security-first & GDPR ready</p>
             </div>
           </div>
         </Container>

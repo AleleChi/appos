@@ -37,6 +37,7 @@ const translateError = (err: any): string => {
     lower.includes("invalid_credentials") ||
     lower.includes("invalid credentials") ||
     lower.includes("incorrect password") ||
+    lower.includes("invalid password") ||
     lower.includes("invalid email or password") ||
     lower.includes("authentication failed") ||
     lower.includes("invalid email") ||

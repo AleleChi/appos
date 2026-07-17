@@ -290,7 +290,7 @@ if (isSessionLoading) {
       {/* 1. Shared Navigation Header (Hidden on dashboard and auth screens) */}
       {!isAuthPage && currentPage !== "dashboard" && currentPage !== "workspace-creation" && currentPage !== "connect-website" && (
         <Navbar
-          currentPage={currentPage}
+          currentPage={currentPage as any}
           setCurrentPage={(page) => setCurrentPage(page as any)}
           onGetStarted={handleGetStartedAction}
           user={user}
@@ -412,7 +412,7 @@ if (isSessionLoading) {
       {/* 9. Shared Footer Section (Hidden on dashboard and auth screens) */}
       {!isAuthPage && currentPage !== "dashboard" && currentPage !== "workspace-creation" && currentPage !== "connect-website" && (
         <Footer 
-          currentPage={currentPage} 
+          currentPage={currentPage as any} 
           setCurrentPage={(page) => setCurrentPage(page as any)} 
         />
       )}

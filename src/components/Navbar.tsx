@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Menu, X, ArrowRight, LogOut, LayoutDashboard } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { authService } from "../lib/authService";
@@ -12,8 +12,71 @@ interface NavbarProps {
 
 export default function Navbar({ currentPage, setCurrentPage, onGetStarted, user }: NavbarProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState<"product" | "solutions" | "resources" | null>(null);
 
   const navItems = ["Product", "Solutions", "Resources", "Pricing", "Security"];
+
+  useEffect(() => {
+    if (currentPage !== "home") {
+      setActiveSection(null);
+      return;
+    }
+
+    // Default to product section when near the top
+    setActiveSection("product");
+
+    const sectionIds = ["product", "solutions", "resources"];
+    const elements = sectionIds
+      .map((id) => document.getElementById(id))
+      .filter((el): el is HTMLElement => el !== null);
+
+    if (elements.length === 0) return;
+
+    const visibilityMap = new Map<string, number>();
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          visibilityMap.set(entry.target.id, entry.isIntersecting ? entry.intersectionRatio : 0);
+        });
+
+        let maxRatio = 0;
+        let winningSection: string | null = null;
+
+        sectionIds.forEach((id) => {
+          const ratio = visibilityMap.get(id) || 0;
+          if (ratio > maxRatio) {
+            maxRatio = ratio;
+            winningSection = id;
+          }
+        });
+
+        if (winningSection) {
+          setActiveSection(winningSection as "product" | "solutions" | "resources");
+        } else if (window.scrollY < 200) {
+          setActiveSection("product");
+        }
+      },
+      {
+        threshold: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+        rootMargin: "-20% 0px -40% 0px",
+      }
+    );
+
+    elements.forEach((el) => observer.observe(el));
+
+    const handleScroll = () => {
+      if (window.scrollY < 80) {
+        setActiveSection("product");
+      }
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, [currentPage]);
 
   const handleNavClick = (item: string) => {
     setIsOpen(false);
@@ -78,16 +141,23 @@ export default function Navbar({ currentPage, setCurrentPage, onGetStarted, user
         {/* Desktop Navigation Links */}
         <nav className="hidden md:flex items-center gap-8">
           {navItems.map((item) => {
-            const isActive =
-              (item === "Pricing" && currentPage === "pricing") ||
-              (item === "Security" && currentPage === "security") ||
-              (item !== "Pricing" && item !== "Security" && currentPage === "home");
+            const itemKey = item.toLowerCase();
+            let isActive = false;
+
+            if (currentPage === "pricing") {
+              isActive = itemKey === "pricing";
+            } else if (currentPage === "security") {
+              isActive = itemKey === "security";
+            } else if (currentPage === "home") {
+              isActive = activeSection === itemKey;
+            }
 
             return (
               <button
                 key={item}
                 onClick={() => handleNavClick(item)}
                 className="relative py-2 text-sm font-semibold text-brand-text-secondary transition-colors hover:text-brand-dark cursor-pointer border-0 bg-transparent p-0 focus:outline-none"
+                aria-current={isActive ? (currentPage === "home" ? "location" : "page") : undefined}
               >
                 {item}
                 {isActive && (
@@ -95,6 +165,7 @@ export default function Navbar({ currentPage, setCurrentPage, onGetStarted, user
                     layoutId="activeNav"
                     className="absolute bottom-0 left-0 h-0.5 w-full bg-brand-primary"
                     transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                    aria-hidden="true"
                   />
                 )}
               </button>
@@ -144,6 +215,7 @@ export default function Navbar({ currentPage, setCurrentPage, onGetStarted, user
         <button
           onClick={() => setIsOpen(!isOpen)}
           aria-label="Toggle menu"
+          aria-expanded={isOpen}
           className="flex h-11 w-11 items-center justify-center rounded-lg border border-[#E2E8F0] bg-brand-bg text-brand-dark md:hidden transition-colors hover:bg-slate-100 cursor-pointer"
         >
           {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -163,15 +235,22 @@ export default function Navbar({ currentPage, setCurrentPage, onGetStarted, user
             <div className="flex flex-col gap-4 px-6 py-6 bg-white text-left">
               <div className="flex flex-col gap-1">
                 {navItems.map((item) => {
-                  const isItemActive =
-                    (item === "Pricing" && currentPage === "pricing") ||
-                    (item === "Security" && currentPage === "security") ||
-                    (item !== "Pricing" && item !== "Security" && currentPage === "home");
+                  const itemKey = item.toLowerCase();
+                  let isItemActive = false;
+
+                  if (currentPage === "pricing") {
+                    isItemActive = itemKey === "pricing";
+                  } else if (currentPage === "security") {
+                    isItemActive = itemKey === "security";
+                  } else if (currentPage === "home") {
+                    isItemActive = activeSection === itemKey;
+                  }
 
                   return (
                     <button
                       key={item}
                       onClick={() => handleNavClick(item)}
+                      aria-current={isItemActive ? (currentPage === "home" ? "location" : "page") : undefined}
                       className={`text-left rounded-lg px-4 py-3 text-base font-bold transition-colors border-0 w-full cursor-pointer ${
                         isItemActive
                           ? "bg-brand-primary/5 text-brand-primary"

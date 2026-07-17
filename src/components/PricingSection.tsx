@@ -57,7 +57,7 @@ export default function PricingSection({ onGetStarted }: PricingSectionProps) {
       description: "Mission-critical infrastructure & security.",
       price: { monthly: "Custom", annually: "Custom" },
       features: [
-        { name: "SOC2 compliance", included: true },
+        { name: "Security-first architecture", included: true },
         { name: "E2E encryption", included: true },
         { name: "24/7 uptime SLA", included: true },
         { name: "Custom integrations", included: true },
@@ -345,7 +345,7 @@ export default function PricingSection({ onGetStarted }: PricingSectionProps) {
                     <span className="text-brand-dark font-bold">Pro & Ent only</span>
                   </div>
                   <div className="flex justify-between items-center text-xs">
-                    <span className="text-brand-text-secondary font-medium">SOC2 Compliance</span>
+                    <span className="text-brand-text-secondary font-medium">Security-First Architecture</span>
                     <span className="text-brand-dark font-bold">All plans</span>
                   </div>
                 </div>
@@ -381,7 +381,7 @@ export default function PricingSection({ onGetStarted }: PricingSectionProps) {
                   <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/5 border border-white/10 text-brand-primary">
                     <ShieldCheck className="h-5.5 w-5.5" />
                   </div>
-                  <span className="text-sm font-bold text-slate-200">SOC2 Type II Certified</span>
+                  <span className="text-sm font-bold text-slate-200">Security-first architecture</span>
                 </div>
                 <div className="flex items-center gap-3.5">
                   <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/5 border border-white/10 text-brand-primary">
@@ -447,7 +447,7 @@ export default function PricingSection({ onGetStarted }: PricingSectionProps) {
             {/* Flat dark rows layout with badges */}
             <div className="flex flex-wrap justify-center gap-2 pt-2">
               <span className="rounded bg-white/5 border border-white/8 px-4 py-2 text-xs font-bold text-slate-300 tracking-wide font-mono">
-                SOC 2 Type II
+                Security-first
               </span>
               <span className="rounded bg-white/5 border border-white/8 px-4 py-2 text-xs font-bold text-slate-300 tracking-wide font-mono">
                 GDPR

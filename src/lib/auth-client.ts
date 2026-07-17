@@ -1,18 +1,20 @@
 import { createAuthClient } from "better-auth/react";
+import { getApiUrl } from "./api-config";
+import { safeStorage } from "./safe-storage";
 
 export const authClient = createAuthClient({
-  baseURL: "https://appos.onrender.com",
+  // Dynamically resolves target backend based on active environment (local / sandbox / production)
+  baseURL: getApiUrl("/"),
   fetchOptions: {
     onSuccess: (ctx) => {
       const authToken = ctx.response.headers.get("set-auth-token");
       if (authToken) {
-        // Automatically save active session token for Header validation
-        localStorage.setItem("bearer_token", authToken);
+        safeStorage.setItem("bearer_token", authToken);
       }
     },
     auth: {
       type: "Bearer",
-      token: () => localStorage.getItem("bearer_token") || ""
+      token: () => safeStorage.getItem("bearer_token") || ""
     }
   }
 });

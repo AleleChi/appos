@@ -64,12 +64,12 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[] } {
       return { rows: [] };
     }
 
-    let rows = [...(mockStore[tableName] || [])];
+    let rows = [...((mockStore as any)[tableName] || [])];
 
     // Match conditions like "email" = $1 or "id" = $1
     const matches = [...normalized.matchAll(/"([^"]+)"\s*=\s*\$(\d+)/g)];
     if (matches.length > 0) {
-      rows = rows.filter(row => {
+      rows = rows.filter((row: any) => {
         return matches.every(match => {
           const colName = match[1];
           const paramIdx = parseInt(match[2], 10) - 1;
@@ -102,8 +102,8 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[] } {
       newRecord[col] = params[idx];
     });
 
-    if (!mockStore[tableName]) mockStore[tableName] = [];
-    mockStore[tableName].push(newRecord);
+    if (!(mockStore as any)[tableName]) (mockStore as any)[tableName] = [];
+    (mockStore as any)[tableName].push(newRecord);
     saveMockDb();
 
     return { rows: [newRecord] };
@@ -122,7 +122,7 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[] } {
     const wherePart = wherePartMatch[1];
 
     const whereMatches = [...wherePart.matchAll(/"([^"]+)"\s*=\s*\$(\d+)/g)];
-    const matchingRows = (mockStore[tableName] || []).filter(row => {
+    const matchingRows = ((mockStore as any)[tableName] || []).filter((row: any) => {
       return whereMatches.every(match => {
         const colName = match[1];
         const paramIdx = parseInt(match[2], 10) - 1;
@@ -131,7 +131,7 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[] } {
     });
 
     const setMatches = [...setPart.matchAll(/"([^"]+)"\s*=\s*\$(\d+)/g)];
-    matchingRows.forEach(row => {
+    matchingRows.forEach((row: any) => {
       setMatches.forEach(match => {
         const colName = match[1];
         const paramIdx = parseInt(match[2], 10) - 1;
@@ -152,7 +152,7 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[] } {
       const wherePart = wherePartMatch[1];
       const whereMatches = [...wherePart.matchAll(/"([^"]+)"\s*=\s*\$(\d+)/g)];
       
-      mockStore[tableName] = (mockStore[tableName] || []).filter(row => {
+      (mockStore as any)[tableName] = ((mockStore as any)[tableName] || []).filter((row: any) => {
         const isMatch = whereMatches.every(match => {
           const colName = match[1];
           const paramIdx = parseInt(match[2], 10) - 1;
@@ -162,7 +162,7 @@ function executeMockQuery(sql: string, params: any[] = []): { rows: any[] } {
       });
       saveMockDb();
     } else {
-      mockStore[tableName] = [];
+      (mockStore as any)[tableName] = [];
       saveMockDb();
     }
 

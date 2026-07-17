@@ -10,7 +10,7 @@ import { db } from "./src/lib/db";
 import { v2 as cloudinary } from "cloudinary";
 import { queue } from "./src/lib/queue";
 import { auth } from "./api/_lib/auth";
-import { toNodeHandler } from "better-auth/node";
+import { toNodeHandler, fromNodeHeaders } from "better-auth/node";
 import workspacesRouter from "./api/workspaces";
 import appsRouter from "./api/apps";
 
@@ -118,12 +118,17 @@ app.use((req, res, next) => {
     "Content-Type, Authorization, x-better-auth-session, Cookie, Accept, X-Requested-With"
   );
   res.setHeader(
+    "Access-Control-Expose-Headers", 
+    "set-auth-token, x-better-auth-session" // CRITICAL: Allows the client to read the token
+  );
+  res.setHeader(
     "Access-Control-Allow-Methods",
     "GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD"
   );
 
   if (req.method === "OPTIONS") {
-    return res.status(200).end();
+    res.sendStatus(204);
+    return;
   }
   next();
 });
@@ -147,6 +152,40 @@ Route: ${route}
 User: ${userEmail}
 Database: ${dbConnected}
 Result: Processing delegate to Better Auth`);
+
+  // Intercept the /api/auth/status route directly to prevent Better Auth 404 errors
+  const parsedUrl = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
+  if (parsedUrl.pathname === "/api/auth/status" || req.path === "/api/auth/status" || (req.originalUrl && req.originalUrl.split("?")[0] === "/api/auth/status")) {
+    const session = await auth.api.getSession({ 
+      headers: fromNodeHeaders(req.headers) 
+    });
+    if (!session || !session.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    try {
+      const userWorkspaces = await db.query(`
+        SELECT w.id, w.name, wm.role 
+        FROM workspaces w
+        JOIN workspace_members wm ON w.id = wm.workspace_id
+        WHERE wm.user_id = $1
+        ORDER BY w.created_at DESC
+      `, [session.user.id]);
+
+      return res.status(200).json({
+        authenticated: true,
+        user: session.user,
+        workspaces: userWorkspaces || []
+      });
+    } catch (error: any) {
+      console.error("Auth status query failure in server.ts interceptor:", error);
+      return res.status(200).json({
+        authenticated: true,
+        user: session.user,
+        workspaces: []
+      });
+    }
+  }
 
   // --- PRESERVE OUTER CORS RESPONSES ---
   const currentOrigin = req.headers.origin || "";
@@ -175,6 +214,10 @@ Result: Processing delegate to Better Auth`);
     res.setHeader(
       "Access-Control-Allow-Headers",
       "Content-Type, Authorization, x-better-auth-session, Cookie, Accept, X-Requested-With"
+    );
+    res.setHeader(
+      "Access-Control-Expose-Headers", 
+      "set-auth-token, x-better-auth-session" // CRITICAL: Allows the client to read the token
     );
     res.setHeader(
       "Access-Control-Allow-Methods",
@@ -432,17 +475,8 @@ v1Router.get("/health/database", async (req, res) => {
 async function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
   try {
     // 1. Try to validate session using Better Auth
-    const headers = new Headers();
-    for (const [key, val] of Object.entries(req.headers)) {
-      if (Array.isArray(val)) {
-        val.forEach(v => headers.append(key, v));
-      } else if (val !== undefined) {
-        headers.set(key, val);
-      }
-    }
-
     const session = await auth.api.getSession({
-      headers
+      headers: fromNodeHeaders(req.headers)
     });
     if (session && session.user) {
       req.cookies = req.cookies || {};
@@ -658,6 +692,9 @@ app.use("/api/*", (req, res) => {
  * ============================================================================
  */
 function validateAndLogStartupEnv() {
+  if (!process.env.DATABASE_URL) {
+    console.error("❌ CRITICAL CONFIG ERROR: DATABASE_URL is missing in the current environment! All real database and auth-dependent functions will fail.");
+  }
   const googleClientIdConfigured = !!process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_ID !== "mock_google_client_id";
   const cid = process.env.GOOGLE_CLIENT_ID || "";
   const googleClientIdSuffix = cid.length >= 6 ? cid.slice(-6) : cid;

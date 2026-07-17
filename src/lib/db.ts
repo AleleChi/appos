@@ -229,6 +229,13 @@ export class Database {
           idleTimeoutMillis: 10000, // keep idle timeout low to avoid stale serverless connections
           connectionTimeoutMillis: 10000,
         });
+
+        // Ensure search_path is reset to public on connect to avoid PgBouncer contamination
+        this.pgPool.on("connect", (client: any) => {
+          client.query("SET search_path TO public").catch((err: any) => {
+            console.warn("Failed to reset search_path to public on connect:", err.message);
+          });
+        });
         
         // Register an error event listener to catch background idle client exceptions safely
         this.pgPool.on("error", (err) => {

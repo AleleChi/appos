@@ -29,7 +29,7 @@ export default function SecuritySection() {
           <div className="flex flex-wrap justify-center gap-4.5">
             <div className="inline-flex items-center gap-2 rounded-lg bg-white/3 border border-white/8 px-4.5 py-3 hover:border-white/15 transition-all">
               <CheckCircle className="h-4.5 w-4.5 text-emerald-400" />
-              <span className="text-sm font-semibold tracking-wide text-slate-200">SOC2 Type II</span>
+              <span className="text-sm font-semibold tracking-wide text-slate-200">Security-first architecture</span>
             </div>
             <div className="inline-flex items-center gap-2 rounded-lg bg-white/3 border border-white/8 px-4.5 py-3 hover:border-white/15 transition-all">
               <CheckCircle className="h-4.5 w-4.5 text-emerald-400" />
@@ -50,7 +50,7 @@ export default function SecuritySection() {
           </h2>
           
           <p className="text-center text-sm font-medium text-slate-400 leading-relaxed mb-8 px-1">
-            Bank-level encryption and SOC2 compliance built into the core. Your data never leaves our secure perimeter.
+            Bank-level encryption and security-first architecture built into the core. Your data never leaves our secure perimeter.
           </p>
 
           {/* Mobile data grid rows */}
@@ -74,7 +74,7 @@ export default function SecuritySection() {
                 <span className="text-sm font-extrabold text-white mt-1">Compliance</span>
               </div>
               <span className="rounded bg-brand-primary/15 border border-brand-primary/30 px-3 py-1 text-xs font-bold text-brand-primary font-mono">
-                SOC2 Type II
+                Security-first
               </span>
             </div>
 

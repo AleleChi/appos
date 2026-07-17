@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import Swal from "sweetalert2";
 import { getApiUrl } from "../lib/api-config";
+import { safeStorage } from "../lib/safe-storage";
 
 // Inline vector icon components to ensure cross-platform brand alignment
 const GridIcon = () => (
@@ -74,7 +75,7 @@ export default function WorkspaceCreationPage({ onWorkspaceCreated, onBackToHome
 
     try {
       // 1. Header-Based Token Extraction to securely bypass browser sandbox iframe cookie blocking
-      const sessionToken = localStorage.getItem("bearer_token") || "";
+      const sessionToken = safeStorage.getItem("bearer_token") || "";
       const targetUrl = getApiUrl("/api/workspaces");
 
       const response = await fetch(targetUrl, {

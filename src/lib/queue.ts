@@ -24,8 +24,8 @@ class JobQueue {
   private workerActive = false;
 
   constructor() {
-    // Start background worker loop automatically on startup
-    this.startWorker();
+    // In compliance with Milestone 1, we do NOT automatically start the background worker on constructor initialization.
+    // Worker initiation occurs explicitly during bootstrap lifecycle.
   }
 
   /**
@@ -84,7 +84,7 @@ class JobQueue {
    * High performance background Worker loop.
    * Simulates a standalone Render Background Worker processing items from the queue.
    */
-  private async startWorker() {
+  public async startWorker() {
     if (this.workerActive) return;
     this.workerActive = true;
     console.log("[WORKER] Production background job worker started.");

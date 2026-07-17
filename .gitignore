@@ -1,8 +1,30 @@
+# Dependencies
 node_modules/
-build/
+**/node_modules/
+
+# Next.js and build outputs
+.next/
+**/.next/
 dist/
+**/dist/
 coverage/
+*.tsbuildinfo
+.turbo/
+.vercel/
 .DS_Store
+
+# Logs
 *.log
-.env*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local environment secrets
+.env
+.env.*
 !.env.example
+
+# Corrupted Git backup
+.git_corrupt_backup/
+vitest-output.txt
+test-auth.ts

@@ -1,15 +1,25 @@
 {
-  "name": "react-example",
+  "name": "@appos/monorepo",
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "workspaces": [
+    "apps/web",
+    "apps/api",
+    "packages/contracts"
+  ],
   "scripts": {
-    "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "start": "node dist/server.cjs",
-    "preview": "vite preview",
-    "clean": "rm -rf dist server.js app_database.json",
-    "lint": "tsc --noEmit"
+    "dev": "concurrently --kill-others -n \"api,web\" -c \"cyan,magenta\" \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:web": "NODE_ENV=development PORT=3000 npm run dev --workspace=@appos/web",
+    "dev:api": "NODE_ENV=development PORT=3001 API_PORT=3001 npm run dev --workspace=@appos/api",
+    "build": "npm run build --workspace=@appos/web && npm run build --workspace=@appos/api",
+    "start": "npm run start --workspace=@appos/web",
+    "preview": "npm run start --workspace=@appos/web",
+    "clean": "rm -rf dist server.js app_database.json apps/web/.next apps/api/dist",
+    "lint": "npm run lint --workspace=@appos/web",
+    "typecheck": "tsc --noEmit && tsc --noEmit --project apps/api/tsconfig.json",
+    "test": "vitest run apps/api/src/tests/integration.test.ts",
+    "test:integration": "vitest run apps/api/src/tests/integration.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -20,16 +30,14 @@
     "cloudinary": "^2.10.0",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.2.3",
+    "drizzle-orm": "^0.45.2",
     "express": "^4.21.2",
     "express-rate-limit": "^8.5.2",
     "kysely": "^0.29.3",
-    "lucide-react": "^0.546.0",
-    "motion": "^12.23.24",
     "pg": "^8.22.0",
-    "react": "^19.0.1",
-    "react-dom": "^19.0.1",
+    "reflect-metadata": "^0.2.2",
     "resend": "^4.1.2",
-    "sweetalert2": "^11.26.25",
+    "rxjs": "^7.8.2",
     "vite": "^6.2.3"
   },
   "devDependencies": {
@@ -38,11 +46,18 @@
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "@types/pg": "^8.20.0",
+    "@typescript-eslint/eslint-plugin": "^8.64.0",
+    "@typescript-eslint/parser": "^8.64.0",
     "autoprefixer": "^10.4.21",
+    "concurrently": "^10.0.3",
+    "drizzle-kit": "^0.31.10",
     "esbuild": "^0.25.0",
+    "eslint": "8",
+    "eslint-config-next": "^14.2.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "vitest": "^4.1.10"
   }
 }
