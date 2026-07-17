@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { motion } from "motion/react";
+import { motion } from "framer-motion";
 import { Loader2, ShieldCheck, ShieldAlert, ArrowRight, Lock, Mail, CheckCircle, AlertTriangle } from "lucide-react";
 import { authService } from "../lib/authService";
 import { AuthLayout, AuthLogo, FormField, PasswordField, PrimaryButton } from "./AuthComponents";

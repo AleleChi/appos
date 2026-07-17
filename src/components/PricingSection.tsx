@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Check, X, Shield, Star, Lock, ShieldCheck, ArrowRight, Code } from "lucide-react";
 import { Section, Container, MainHeading, SectionHeading, CardHeading, BodyProse, LabelText, Button, Card, Badge } from "./MarketingCore";
-import { motion } from "motion/react";
+import { motion } from "framer-motion";
 
 interface PricingSectionProps {
   onGetStarted: () => void;

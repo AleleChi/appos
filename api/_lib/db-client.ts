@@ -1,7 +1,6 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "../../src/db/schema";
-import { MockPool } from "./mock-pool";
 
 const isProduction = process.env.NODE_ENV === "production";
 const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
@@ -23,6 +22,7 @@ let pool: any;
 
 if (!databaseUrl) {
   console.warn("DATABASE_URL is not set. Running in DEVELOPMENT-ONLY MOCK MODE.");
+  const { MockPool } = require("../../apps/api/src/lib/mock-pool");
   pool = new MockPool();
   (pool as any).isMock = true;
 } else {

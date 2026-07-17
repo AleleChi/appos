@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, Wrench, Rocket } from "lucide-react";
-import { motion } from "motion/react";
+import { motion } from "framer-motion";
 
 export default function ProcessSection() {
   const steps = [

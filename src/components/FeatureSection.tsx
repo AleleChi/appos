@@ -1,6 +1,6 @@
 import React from "react";
 import { Bell, Fingerprint, WifiOff, BarChart3 } from "lucide-react";
-import { motion } from "motion/react";
+import { motion } from "framer-motion";
 
 export default function FeatureSection() {
   return (

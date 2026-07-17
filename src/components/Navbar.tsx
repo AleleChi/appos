@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Menu, X, ArrowRight, LogOut, LayoutDashboard } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence } from "framer-motion";
 import { authService } from "../lib/authService";
 
 interface NavbarProps {

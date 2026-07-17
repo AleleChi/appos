@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Check, Loader2, ArrowRight, ShieldCheck, HelpCircle } from "lucide-react";
-import { motion, useAnimation } from "motion/react";
+import { motion, useAnimation } from "framer-motion";
 
 interface ScoreCardProps {
   analyzingUrl: string | null;

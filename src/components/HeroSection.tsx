@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { ArrowRight, Play, CheckCircle2, Laptop, Smartphone, Cpu, ShieldCheck } from "lucide-react";
-import { motion } from "motion/react";
+import { motion } from "framer-motion";
 
 interface HeroSectionProps {
   onAnalyze: (url: string) => void;

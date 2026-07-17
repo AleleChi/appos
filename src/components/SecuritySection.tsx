@@ -1,6 +1,6 @@
 import React from "react";
 import { ShieldCheck, Lock, CheckCircle, ShieldAlert } from "lucide-react";
-import { motion } from "motion/react";
+import { motion } from "framer-motion";
 
 export default function SecuritySection() {
   return (
